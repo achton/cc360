@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(claude:*)",
+      "Bash(uv run:*)",
+      "Bash(go version:*)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)",
+      "Bash(rm:*)",
+      "Bash(./cc360:*)",
+      "Bash(go:*)",
+      "Bash(/tmp/test_order.go:*)",
+      "Bash(mkdir:*)",
+      "Bash(grep:*)",
+      "Bash(/tmp/dbcheck.go:*)",
+      "Bash(gh auth:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
