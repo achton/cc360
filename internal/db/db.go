@@ -136,9 +136,9 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			message_count = COALESCE(excluded.message_count, sessions.message_count),
 			created = COALESCE(excluded.created, sessions.created),
 			modified = COALESCE(excluded.modified, sessions.modified),
-			git_branch = COALESCE(excluded.git_branch, sessions.git_branch),
+			git_branch = excluded.git_branch,
 			is_sidechain = excluded.is_sidechain,
-			jsonl_path = COALESCE(excluded.jsonl_path, sessions.jsonl_path),
+			jsonl_path = excluded.jsonl_path,
 			last_scanned = excluded.last_scanned
 	`)
 	if err != nil {
@@ -217,6 +217,49 @@ func (db *DB) SetSummary(sessionID, title, summary string) error {
 		title, summary, now, sessionID,
 	)
 	return err
+}
+
+// PruneUnseen deletes sessions that were not part of the current scan.
+// This handles deleted sessions, removed scan paths, etc.
+func (db *DB) PruneUnseen(currentIDs []string) (int64, error) {
+	if len(currentIDs) == 0 {
+		return 0, nil
+	}
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Create a temp table with current IDs
+	if _, err := tx.Exec(`CREATE TEMP TABLE IF NOT EXISTS seen_ids (session_id TEXT PRIMARY KEY)`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM seen_ids`); err != nil {
+		return 0, err
+	}
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO seen_ids (session_id) VALUES (?)`)
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range currentIDs {
+		if _, err := stmt.Exec(id); err != nil {
+			stmt.Close()
+			return 0, err
+		}
+	}
+	stmt.Close()
+
+	result, err := tx.Exec(`DELETE FROM sessions WHERE session_id NOT IN (SELECT session_id FROM seen_ids)`)
+	if err != nil {
+		return 0, err
+	}
+	pruned, _ := result.RowsAffected()
+
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS seen_ids`); err != nil {
+		return 0, err
+	}
+	return pruned, tx.Commit()
 }
 
 // Close closes the database connection.

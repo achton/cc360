@@ -13,6 +13,8 @@ import (
 	"github.com/achton/cc360/internal/tui"
 )
 
+var version = "dev"
+
 func main() {
 	cfg, shouldExit, err := config.Load()
 	if err != nil {
@@ -40,6 +42,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error upserting sessions: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Prune sessions no longer found on disk
+	scannedIDs := make([]string, len(sessions))
+	for i, s := range sessions {
+		scannedIDs[i] = s.SessionID
+	}
+	database.PruneUnseen(scannedIDs)
 
 	all, err := database.AllSessions(cfg.SortBy, true)
 	if err != nil {
