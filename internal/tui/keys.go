@@ -16,6 +16,7 @@ type keyMap struct {
 	Copy      key.Binding
 	Filter    key.Binding
 	Picker    key.Binding
+	Reload    key.Binding
 	Escape    key.Binding
 	Quit      key.Binding
 }
@@ -73,6 +74,10 @@ func newKeyMap() keyMap {
 		Picker: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "projects"),
+		),
+		Reload: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "reload"),
 		),
 		Escape: key.NewBinding(
 			key.WithKeys("esc"),
