@@ -20,7 +20,7 @@ Claude Code stores session metadata at:
 ~/.claude/projects/{encoded-path}/sessions-index.json
 ```
 
-The encoded path replaces `/` with `-` (e.g. `home/user/Code/myapp` becomes `-home-achton-Code-myapp`).
+The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` becomes `-home-user-Code-myproject`).
 
 Each index file contains an `entries` array. Each entry has:
 
@@ -41,10 +41,7 @@ Each index file contains an `entries` array. Each entry has:
 
 Some sessions exist only as `.jsonl` files with no corresponding index entry. These are discovered by scanning `*.jsonl` files in each project directory and checking whether their stem (filename without extension) appears in the index.
 
-Orphan JSONL parsing extracts metadata from the first ~15 lines:
-- `sessionId`, `cwd`, `gitBranch`, `timestamp` from any message entry
-- First user message content (skipping `[Request interrupted by user]`)
-- `isSidechain` flag
+Orphan JSONL parsing extracts metadata from the first 15 lines (`sessionId`, `cwd`, `gitBranch`, first user message, `isSidechain`), then scans the full file for `lastTimestamp` and `msgCount` to ensure accurate modified time and message count.
 
 Orphan scanning is enabled by default but can be disabled via config (`scan_orphans = false`).
 
@@ -144,31 +141,30 @@ The layout adapts to terminal width. Minimum supported width: 80 columns. No hor
 +------------------------------------------------------------------+
 | Date       | Project        | Branch       | Msgs | Title        |
 |------------|----------------|--------------|------|--------------|
-| 2026-03-05 | claude-overview| HEAD         |   14 | TUI fix S... |
-| 2026-03-05 | org/myservice  | develop      |   13 | Security a.. |
-| 2026-03-05 | myapp           | main         |   12 | Dep review.. |
-| 2026-03-04 | website    | HEAD         |   11 | Drupal ski.. |
-| > 2026-03-04 | polym        | HEAD         |    7 | Project st.. |
-| 2026-03-04 | myapp           | feature/os.. |    7 | Open-sourc.. |
+| Yesterday  | myapp          | develop      |   14 | TUI fix S... |
+| Yesterday  | org/myservice  | main         |   13 | Security a.. |
+| 2d ago     | frontend       | feature/..   |   12 | Dep review.. |
+| Mar  4     | website        | HEAD         |   11 | Drupal ski.. |
+| > Mar  4   | backend        | HEAD         |    7 | Project st.. |
 |            |                |              |      |              |
 +------------------------------------------------------------------+
-| Polym project status check                                       |
-| User asked about work done in the polym project and how far      |
-| along it was. Reviewed codebase and summarized progress.         |
+| Backend status check                                             |
+| User asked about work done and progress so far.                  |
+| Reviewed codebase and summarized progress.                       |
 |                                                                  |
-| Session: 9d80cfd6  |  Created: 2026-03-04  |  Modified: 2026-03-04 |
-| Path: ~/Code/polym                                               |
+| Folder: Code/backend  |  Branch: HEAD  |  Msgs: 7               |
+| Modified: 2026-03-04  |  ID: 9d80cfd6                           |
 +------------------------------------------------------------------+
-| q:Quit  enter:Resume  c:Copy  o:Shell  s:Summarize  /:Filter    |
+| enter resume · tab detail · / filter · p projects · s summarize  |
 +------------------------------------------------------------------+
 ```
 
 ### Layout Regions
 
-1. **Header bar** (1 line): App name, session count, current sort/filter indicator.
-2. **Session table** (upper portion, scrollable): Columns adapt to terminal width.
-3. **Detail pane** (lower portion, toggled): Shows full info for highlighted session.
-4. **Status bar** (1 line): Contextual feedback (summarization progress, errors).
+1. **Header bar** (1 line): App name with solid background and author tagline.
+2. **Session table** (upper portion, scrollable): Columns adapt to terminal width. Catppuccin Mocha color theme with role-based column styling. Selected row has a blue accent bar. Info line below the table shows session count and scroll indicator.
+3. **Detail pane** (lower portion, visible by default, toggled with Tab): Shows full info for highlighted session.
+4. **Status bar** (1 line): Contextual feedback (summarization progress, errors). Truncated to prevent wrapping.
 5. **Key hints** (1 line): Available actions.
 
 ### Column Priority (responsive)
@@ -244,15 +240,11 @@ Multiple `claude --print` calls run concurrently (default 3, configurable). A wo
 | `Tab` | Toggle detail pane |
 | `Enter` | Resume Claude session (suspend TUI, run `claude --resume`, return) |
 | `c` | Copy resume command to clipboard (`cd <path> && claude --resume <id>`) |
-| `o` | Open shell in project dir (suspend TUI, spawn `$SHELL`, return) |
 | `s` | Summarize selected session |
-| `S` | Summarize all unsummarized |
 | `/` | Open filter input |
-| `Escape` | Clear filter / close filter input |
-| `p` | Filter by project (show project picker) |
-| `1`-`4` | Sort: modified / created / messages / project |
-| `x` | Toggle sidechain visibility |
-| `?` | Show help overlay |
+| `Escape` | Clear text filter |
+| `p` | Filter by project (tree picker with multi-select) |
+| `r` | Reload config and re-scan sessions |
 | `q` | Quit |
 
 ## Filtering & Sorting
@@ -263,16 +255,7 @@ Opens a text input at the top. Filters live as the user types. Matches against: 
 
 ### Project Filter (`p`)
 
-Opens a picker listing all projects with session counts. Selecting a project filters the list to only that project. Selecting again or pressing Escape clears.
-
-### Sort Orders (`1`-`4`)
-
-1. **Modified** (default): Most recently active first
-2. **Created**: Newest sessions first
-3. **Messages**: Most messages first (indicator of session complexity/length)
-4. **Project**: Alphabetical by project name, then by modified within each project
-
-Pressing the same sort key again reverses the order.
+Opens a tree-based picker overlay showing projects grouped by directory. Use `Space` to toggle selection, `←`/`→` to collapse/expand groups, `Enter` to apply. Multiple projects can be selected. Sessions in root directories appear as a dimmed `(root)` entry within their group. Filters stack with the text filter.
 
 ## Actions
 
@@ -295,15 +278,9 @@ Uses OSC 52 escape sequence for clipboard access (works in most modern terminals
 
 Status bar confirms: `Copied resume command to clipboard`
 
-### Open Shell (`o`)
+### Reload (`r`)
 
-1. Suspend the TUI
-2. Run `$SHELL` with `cwd` set to the session's project path
-3. When the shell exits (user types `exit`), restore the TUI
-
-### Future: Tmux Support
-
-Not in v1. Future enhancement: if running inside tmux, offer to open a new tmux pane/window instead of suspending.
+Re-reads the config file, re-scans all session directories, and refreshes the session list in place without restarting.
 
 ## Technology Stack
 
@@ -344,8 +321,8 @@ cc360/
 │       ├── model.go         # Top-level Bubbletea model, Update, View
 │       ├── table.go         # Session table component
 │       ├── detail.go        # Detail pane component
-│       ├── filter.go        # Filter input + project picker
-│       ├── status.go        # Status bar component
+│       ├── filter.go        # Filter input
+│       ├── picker.go        # Project picker overlay (tree view)
 │       ├── keys.go          # Key bindings
 │       └── styles.go        # Lipgloss style definitions
 ```
@@ -397,14 +374,14 @@ Auto-summarizing 25 sessions...
 ## Verification Checklist
 
 1. `cc360` with no config -- prints setup instructions, creates default config
-2. `cc360` with config -- scans, caches, launches TUI with populated table
+2. `cc360` with config -- scans, caches, launches TUI with populated table and detail pane
 3. Arrow keys navigate, detail pane toggles with Tab
 4. `Enter` suspends TUI, runs `claude --resume`, returns to TUI
-5. `o` suspends TUI, opens shell in project dir, returns to TUI
-6. `s` on a session -- spinner appears, summary populates after ~5s
-7. Auto-summarization runs on launch with progress in status bar
-8. `/` opens filter, typing filters live, Escape clears
-9. `p` opens project picker, selecting filters the list
-10. Sort keys `1`-`4` change ordering, pressing again reverses
-11. Responsive: resize terminal, columns adapt, no horizontal overflow
-12. 80-column terminal: Date + Project + Title visible, Branch/Msgs hidden
+5. `s` on a session -- spinner appears, summary populates after ~5s
+6. Auto-summarization runs on launch with progress in status bar
+7. `/` opens filter, typing filters live, Escape clears
+8. `p` opens tree-based project picker, multi-select with Space, apply with Enter
+9. `r` reloads config and re-scans sessions
+10. Responsive: resize terminal, columns adapt, no horizontal overflow
+11. 80-column terminal: Date + Project summary + Folder visible, Branch/Msgs hidden
+12. Active sessions show green `●`, worktree sessions show `⌥` indicator

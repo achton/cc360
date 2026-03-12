@@ -8,7 +8,7 @@ After a reboot or across days of work, there's no easy way to see what Claude Co
 
 ## Install
 
-Requires Go 1.24+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
+Requires Go 1.25+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
 
 ```bash
 go install github.com/achton/cc360@latest
@@ -54,26 +54,26 @@ Config file: `~/.config/cc360/config.toml`
 | `PgUp`, `PgDn` | Page up/down |
 | `Home`/`g`, `End`/`G` | Jump to top/bottom |
 | `Enter` | Resume the selected session (`claude --resume`) |
-| `Tab` | Toggle detail pane |
+| `Tab` | Toggle detail pane (open by default) |
 | `/` | Open text filter (live search across all fields) |
-| `p` | Open project picker |
+| `p` | Open project picker (tree view with multi-select) |
 | `s` | Summarize selected session |
 | `c` | Copy resume command to clipboard (via OSC 52) |
-| `o` | Open a shell in the session's project directory |
-| `Esc` | Clear text filter, then project filter (layered) |
+| `r` | Reload config and re-scan all sessions |
+| `Esc` | Clear text filter |
 | `q`, `Ctrl+C` | Quit |
 
 ### Filtering
 
 Press `/` to open the text filter. Type to search across project names, titles, summaries, first prompts, and git branches. Press `Enter` to stop typing and navigate the filtered results — the filter stays visible. Press `/` again to edit the filter text. Press `Esc` to clear.
 
-Press `p` to open the project picker, which lists all projects sorted by session count. Press `s` within the picker to toggle alphabetical sorting. Select a project with `Enter` to filter to it.
+Press `p` to open the project picker, which shows a collapsible tree of projects grouped by directory. Use `Space` to toggle selection, `←`/`→` to collapse/expand groups, and `Enter` to apply. Multiple projects can be selected at once. Sessions in root directories (not subfolders) appear as a dimmed `(root)` entry.
 
-Filters stack: pick a project with `p`, then refine with `/`. Press `Esc` to clear them one at a time (text filter first, then project filter).
+Filters stack: pick projects with `p`, then refine with `/`.
 
 ## Active session detection
 
-CC360 detects currently running Claude Code sessions by scanning `/proc/*/cmdline` for claude processes. Active sessions are marked with `*` next to the date and cannot be resumed or shelled into (to prevent conflicts). Detection refreshes every 15 seconds.
+CC360 detects currently running Claude Code sessions by scanning `/proc/*/cmdline` for claude processes. Active sessions are marked with a green `●` next to the date and cannot be resumed (to prevent conflicts). Detection refreshes every 15 seconds.
 
 ## AI summarization
 
@@ -88,7 +88,7 @@ Summaries are stored in the SQLite cache and persist across runs.
 CC360 reads Claude Code's own data files:
 
 - **Session index**: `~/.claude/projects/{encoded-path}/sessions-index.json` contains metadata for each session (ID, timestamps, branch, message count, summary).
-- **Orphan JSONL files**: Some sessions exist only as `.jsonl` transcript files without an index entry. CC360 parses the first ~15 lines to extract metadata.
+- **Orphan JSONL files**: Some sessions exist only as `.jsonl` transcript files without an index entry. CC360 parses the first 15 lines to extract metadata (cwd, branch, first prompt), then scans the full file for the last timestamp and message count.
 
 The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` → `-home-user-Code-myproject`).
 
@@ -111,7 +111,7 @@ The "Project summary" column shows (in priority order):
 2. Claude's own session summary from the index file
 3. The first user message as a fallback
 
-The "Folder" column shows the project directory relative to the scan path (e.g. `Code/myproject`, `Code-private/homelab`).
+The "Folder" column shows the project directory relative to the scan path (e.g. `Code/myproject`, `Code/lib/mylib`). Worktree sessions show a `⌥` indicator next to the folder name.
 
 Columns are responsive: Branch appears at 90+ columns, message count at 100+.
 
@@ -138,7 +138,7 @@ internal/
 
 ## Tech stack
 
-- [Go](https://go.dev) 1.24+
+- [Go](https://go.dev) 1.25+
 - [Bubbletea](https://github.com/charmbracelet/bubbletea) — Elm-architecture TUI framework
 - [Lipgloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
 - [Bubbles](https://github.com/charmbracelet/bubbles) — Spinner, text input components
