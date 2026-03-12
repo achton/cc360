@@ -88,6 +88,7 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 		scannerSessions: scannerSessions,
 		activeIDs:       activeIDs,
 		spinner:         s,
+		detail:          detailPane{visible: true},
 		filter:          newFilterInput(),
 		keys:            newKeyMap(),
 		tableInit:       false,
