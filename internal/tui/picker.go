@@ -36,31 +36,34 @@ type projectPicker struct {
 	offset int
 }
 
-// simplifyProjectName cleans up worktree paths for display.
+// simplifyProjectName strips the .claude/worktrees/ segment from worktree paths,
+// returning just the base project path (e.g. "Code/lb/myproject").
 func simplifyProjectName(name string) string {
-	// Strip .claude/worktrees/ segments
 	if idx := strings.Index(name, "/.claude/worktrees/"); idx >= 0 {
-		base := name[:idx]
-		wt := name[idx+len("/.claude/worktrees/"):]
-		return base + "/" + wt
+		return name[:idx]
 	}
 	return name
 }
 
-// childLabel returns the part of the project name to show as a leaf label
-// after stripping the group prefix.
-func childLabel(projectName, groupPrefix string) string {
-	rest := strings.TrimPrefix(projectName, groupPrefix+"/")
-	// Simplify worktree paths in the label
-	if idx := strings.Index(rest, ".claude/worktrees/"); idx >= 0 {
-		wt := rest[idx+len(".claude/worktrees/"):]
-		prefix := rest[:idx]
-		if prefix == "" {
-			return wt
-		}
-		return strings.TrimSuffix(prefix, "/") + "/" + wt
+// isWorktreePath returns true if the project name contains a worktree path segment.
+func isWorktreePath(name string) bool {
+	return strings.Contains(name, "/.claude/worktrees/")
+}
+
+// worktreeName extracts the worktree name from a worktree path
+// (e.g. "Code/lb/myproject/.claude/worktrees/pr-123" → "pr-123").
+func worktreeName(name string) string {
+	if idx := strings.Index(name, "/.claude/worktrees/"); idx >= 0 {
+		return name[idx+len("/.claude/worktrees/"):]
 	}
-	return rest
+	return ""
+}
+
+// childLabel returns the part of the project name to show as a leaf label
+// after simplifying worktree paths and stripping the group prefix.
+func childLabel(projectName, groupPrefix string) string {
+	simplified := simplifyProjectName(projectName)
+	return strings.TrimPrefix(simplified, groupPrefix+"/")
 }
 
 func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool) {

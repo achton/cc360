@@ -430,7 +430,7 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 		}
 
 		folder := sanitize(simplifyProjectName(s.ProjectName))
-		if strings.Contains(s.ProjectName, "/.claude/worktrees/") {
+		if isWorktreePath(s.ProjectName) {
 			folder += " " + pickerWorktreeStyle.Render("⌥")
 		}
 		row := []string{date, title, folder}

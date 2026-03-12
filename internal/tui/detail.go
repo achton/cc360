@@ -86,11 +86,17 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 		}
 	}
 
-	// Line 5: Folder + path
+	// Line 5: Folder + worktree indicator + path
 	displayName := simplifyProjectName(s.ProjectName)
 	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(displayName)
-	if s.ProjectPath != "" && s.ProjectPath != s.ProjectName {
-		folderLine += detailMetaStyle.Render("  (" + simplifyProjectName(s.ProjectPath) + ")")
+	if isWorktreePath(s.ProjectName) {
+		wt := worktreeName(s.ProjectName)
+		folderLine += " " + pickerWorktreeStyle.Render("⌥ "+wt)
+	}
+	// Show the real project path (simplified), not the worktree path
+	projectPath := simplifyProjectName(s.ProjectPath)
+	if projectPath != "" && projectPath != displayName {
+		folderLine += detailMetaStyle.Render("  (" + projectPath + ")")
 	}
 	lines = append(lines, folderLine)
 
