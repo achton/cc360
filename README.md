@@ -8,18 +8,25 @@ After a reboot or across days of work, there's no easy way to see what Claude Co
 
 ## Install
 
-Requires Go 1.25+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
+
+### Download binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/achton/cc360/releases/latest), extract, and place in your `$PATH`:
+
+```bash
+tar xzf cc360_*.tar.gz
+sudo mv cc360 /usr/local/bin/
+```
+
+Binaries are available for Linux and macOS (amd64 and arm64).
+
+### From source
+
+Requires Go 1.25+.
 
 ```bash
 go install github.com/achton/cc360@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/achton/cc360.git
-cd cc360
-go build -o cc360 .
 ```
 
 ## First run
