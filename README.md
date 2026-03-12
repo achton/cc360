@@ -17,16 +17,23 @@ After a reboot or across days of work, there's no easy way to see what Claude Co
 
 Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
 
-### Download binary
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/achton/cc360/releases/latest), extract, and place in your `$PATH`:
+### Homebrew (macOS / Linux)
 
 ```bash
-tar xzf cc360_*.tar.gz
+brew install achton/tap/cc360
+```
+
+### Quick install (Linux / macOS)
+
+```bash
+VERSION=$(curl -sSf https://api.github.com/repos/achton/cc360/releases/latest | grep tag_name | cut -d '"' -f4 | sed 's/^v//')
+curl -sSfL "https://github.com/achton/cc360/releases/latest/download/cc360_${VERSION}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz
 sudo mv cc360 /usr/local/bin/
 ```
 
-Binaries are available for Linux and macOS (amd64 and arm64).
+### Download binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/achton/cc360/releases/latest), extract, and place in your `$PATH`. Binaries are available for Linux and macOS (amd64 and arm64).
 
 ### From source
 
