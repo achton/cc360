@@ -168,9 +168,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Resume):
 			return m, m.resumeSession()
 
-		case key.Matches(msg, m.keys.Shell):
-			return m, m.openShell()
-
 		case key.Matches(msg, m.keys.Copy):
 			m.copyResumeCommand()
 			return m, nil
@@ -465,7 +462,6 @@ func (m Model) renderHelp() string {
 		{"p", "projects"},
 		{"s", "summarize"},
 		{"c", "copy cmd"},
-		{"o", "shell"},
 		{"r", "reload"},
 		{"q", "quit"},
 	}
@@ -748,30 +744,6 @@ func (m *Model) resumeSession() tea.Cmd {
 		return nil
 	}
 	c := exec.Command("claude", "--resume", s.SessionID)
-	c.Dir = s.ProjectPath
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return execFinishedMsg{err: err}
-	})
-}
-
-func (m *Model) openShell() tea.Cmd {
-	s := m.selectedSession()
-	if s == nil {
-		m.statusMsg = "No session selected"
-		return nil
-	}
-	if m.isActive(s) {
-		m.statusMsg = "Session is currently active"
-		return nil
-	}
-	if !m.checkProjectPath(s) {
-		return nil
-	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/bash"
-	}
-	c := exec.Command(shell)
 	c.Dir = s.ProjectPath
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return execFinishedMsg{err: err}

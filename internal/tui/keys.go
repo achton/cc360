@@ -12,7 +12,6 @@ type keyMap struct {
 	Detail    key.Binding
 	Summarize key.Binding
 	Resume    key.Binding
-	Shell     key.Binding
 	Copy      key.Binding
 	Filter    key.Binding
 	Picker    key.Binding
@@ -58,10 +57,6 @@ func newKeyMap() keyMap {
 		Resume: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "resume"),
-		),
-		Shell: key.NewBinding(
-			key.WithKeys("o"),
-			key.WithHelp("o", "shell"),
 		),
 		Copy: key.NewBinding(
 			key.WithKeys("c"),
