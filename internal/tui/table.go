@@ -47,8 +47,8 @@ func (t *sessionTable) resize(sessions []db.Session, width, availHeight int) {
 // setHeight sets visible data rows. availHeight is the space available for the
 // entire table view (header + separator + data rows + scroll indicator).
 func (t *sessionTable) setHeight(availHeight int) {
-	// Table chrome: column header(1) + separator(1) + scroll indicator(1) = 3
-	h := availHeight - 3
+	// Table chrome: top sep(1) + column header(1) + separator(1) + scroll indicator(1) = 4
+	h := availHeight - 4
 	if h < 2 {
 		h = 2
 	}
@@ -164,10 +164,14 @@ func renderCell(value string, width int, first bool, role colRole, selected bool
 	return s
 }
 
-// View renders column header + separator + visible rows + scroll indicator.
-// Always returns exactly height+3 lines for stable layout.
+// View renders top separator + column header + separator + visible rows + scroll indicator.
+// Always returns exactly height+4 lines for stable layout.
 func (t *sessionTable) View() string {
 	var b strings.Builder
+
+	// Top separator (visual break between app header and table)
+	b.WriteString(sepStyle.Render(strings.Repeat("╌", t.width)))
+	b.WriteByte('\n')
 
 	// Column header with indent to align with accent bar
 	b.WriteString("  ") // align with "▎ " on data rows
