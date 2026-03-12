@@ -16,6 +16,14 @@ import (
 var version = "dev"
 
 func main() {
+	// Recover terminal state on panic (raw mode, cursor, mouse mode)
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "cc360 panic: %v\n", r)
+			os.Exit(1)
+		}
+	}()
+
 	cfg, shouldExit, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -56,7 +64,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Filter out non-interactive sessions
+	// Filter out non-interactive and non-resumable sessions
 	filtered := make([]db.Session, 0, len(all))
 	for _, s := range all {
 		text := s.ExistingSummary + s.FirstPrompt
@@ -65,6 +73,12 @@ func main() {
 		}
 		if strings.HasPrefix(s.FirstPrompt, "<teammate-message") {
 			continue
+		}
+		// Skip sessions whose project path no longer exists
+		if s.ProjectPath != "" {
+			if _, err := os.Stat(s.ProjectPath); err != nil {
+				continue
+			}
 		}
 		filtered = append(filtered, s)
 	}
