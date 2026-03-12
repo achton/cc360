@@ -9,6 +9,7 @@ import (
 
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/demo"
 	"github.com/achton/cc360/internal/scanner"
 	"github.com/achton/cc360/internal/tui"
 )
@@ -19,6 +20,12 @@ func main() {
 	// Handle --version / -v flag
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Printf("cc360 %s\n", version)
+		return
+	}
+
+	// Handle --demo flag
+	if len(os.Args) == 2 && os.Args[1] == "--demo" {
+		runDemo()
 		return
 	}
 
@@ -93,6 +100,22 @@ func main() {
 	activeIDs := scanner.ActiveSessionIDs(sessions)
 
 	m := tui.New(database, cfg, filtered, sessions, activeIDs)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runDemo() {
+	cfg := config.Config{
+		ScanPaths: []string{"~/Code"},
+		SortBy:    "modified",
+	}
+	sessions := demo.Sessions()
+	// Mark one session as "active" for demo purposes
+	activeIDs := map[string]bool{sessions[0].SessionID: true}
+	m := tui.New(nil, cfg, sessions, nil, activeIDs)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

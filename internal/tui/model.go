@@ -507,6 +507,9 @@ func (m *Model) isActive(s *db.Session) bool {
 
 // startAutoSummarize queues unsummarized sessions for background processing.
 func (m *Model) startAutoSummarize() tea.Cmd {
+	if m.db == nil {
+		return nil
+	}
 	unsummarized, err := m.db.Unsummarized(m.cfg.AutoSummarize)
 	if err != nil || len(unsummarized) == 0 {
 		return nil
@@ -615,8 +618,15 @@ func (m *Model) handleSummarizeResult(msg summarizeResultMsg) tea.Cmd {
 	if msg.err != nil {
 		m.summaryFailed++
 	} else {
-		// Update DB
-		if err := m.db.SetSummary(msg.sessionID, msg.title, msg.summary); err == nil {
+		// Update DB (nil in demo mode)
+		dbOK := true
+		if m.db != nil {
+			if err := m.db.SetSummary(msg.sessionID, msg.title, msg.summary); err != nil {
+				dbOK = false
+				m.summaryFailed++
+			}
+		}
+		if dbOK {
 			// Update in-memory sessions (both allSessions and filtered sessions)
 			for i := range m.allSessions {
 				if m.allSessions[i].SessionID == msg.sessionID {
@@ -633,8 +643,6 @@ func (m *Model) handleSummarizeResult(msg summarizeResultMsg) tea.Cmd {
 				}
 			}
 			m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeIDs)
-		} else {
-			m.summaryFailed++
 		}
 	}
 
