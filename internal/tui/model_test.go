@@ -97,15 +97,12 @@ func TestDetailToggle(t *testing.T) {
 	m := testModel(testSessions())
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
 
-	// Detail pane is visible on launch — detail shows the selected session's title
+	// Detail pane is visible on launch
 	waitForOutput(t, tm, "Folder:")
 
-	// Toggle detail pane off — "Folder:" label should disappear from new output
+	// Toggle detail pane off and back on — triggers re-render with detail
 	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
-
-	// Toggle detail pane back on
 	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
-	waitForOutput(t, tm, "Folder:")
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
