@@ -16,6 +16,12 @@ import (
 var version = "dev"
 
 func main() {
+	// Handle --version / -v flag
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("cc360 %s\n", version)
+		return
+	}
+
 	// Recover terminal state on panic (raw mode, cursor, mouse mode)
 	defer func() {
 		if r := recover(); r != nil {

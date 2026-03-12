@@ -26,3 +26,12 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+
+brews:
+  - repository:
+      owner: achton
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/achton/cc360"
+    description: "Terminal UI for browsing and resuming Claude Code sessions"
+    license: "MIT"
