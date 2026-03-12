@@ -170,11 +170,13 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		msgCount       int
 	)
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for long lines
-	for i := 0; i < 15 && scanner.Scan(); i++ {
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for long lines
+
+	// First pass: read first 15 lines for metadata (cwd, branch, firstPrompt, etc.)
+	for i := 0; i < 15 && sc.Scan(); i++ {
 		var entry jsonlEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+		if err := json.Unmarshal(sc.Bytes(), &entry); err != nil {
 			continue
 		}
 		if entry.Type == "file-history-snapshot" {
@@ -202,6 +204,28 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 			firstPrompt = text
 		}
 		// Count user/assistant messages
+		if len(entry.Message) > 0 {
+			var mc messageContent
+			if json.Unmarshal(entry.Message, &mc) == nil {
+				if mc.Role == "user" || mc.Role == "assistant" {
+					msgCount++
+				}
+			}
+		}
+	}
+
+	// Continue scanning remaining lines for lastTimestamp and msgCount
+	for sc.Scan() {
+		var entry jsonlEntry
+		if err := json.Unmarshal(sc.Bytes(), &entry); err != nil {
+			continue
+		}
+		if entry.Type == "file-history-snapshot" {
+			continue
+		}
+		if entry.Timestamp != "" {
+			lastTimestamp = entry.Timestamp
+		}
 		if len(entry.Message) > 0 {
 			var mc messageContent
 			if json.Unmarshal(entry.Message, &mc) == nil {
