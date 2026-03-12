@@ -6,7 +6,7 @@ import (
 )
 
 var filterStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("229")).
+	Foreground(colorYellow).
 	Padding(0, 1)
 
 type filterInput struct {

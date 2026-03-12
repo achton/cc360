@@ -12,22 +12,26 @@ const detailHeight = 8 // total lines including border
 
 var (
 	detailBorderStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderTop(true).
-				BorderForeground(lipgloss.Color("240"))
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorSurface1).
+				Padding(0, 1)
 
 	detailTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("229")).
+				Foreground(colorMauve).
 				Bold(true)
 
 	detailPromptStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("250"))
+				Foreground(colorSubtext1)
 
 	detailLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245"))
+				Foreground(colorSubtext0)
 
 	detailMetaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(colorOverlay0)
+
+	detailActiveStyle = lipgloss.NewStyle().
+				Foreground(colorGreen).
+				Bold(true)
 )
 
 type detailPane struct {
@@ -50,7 +54,7 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 
 	// Active indicator
 	if active {
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("ACTIVE SESSION"))
+		lines = append(lines, detailActiveStyle.Render("● ACTIVE SESSION"))
 	}
 
 	// Title (bold, prominent) or folder if no title
@@ -61,7 +65,7 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 	if title != "" {
 		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, width-2)))
 	} else {
-		lines = append(lines, detailTitleStyle.Render(s.ProjectName))
+		lines = append(lines, detailTitleStyle.Render(simplifyProjectName(s.ProjectName)))
 	}
 
 	// Line 2: AI summary if available
@@ -83,9 +87,10 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 	}
 
 	// Line 5: Folder + path
-	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(s.ProjectName)
+	displayName := simplifyProjectName(s.ProjectName)
+	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(displayName)
 	if s.ProjectPath != "" && s.ProjectPath != s.ProjectName {
-		folderLine += detailMetaStyle.Render("  ("+s.ProjectPath+")")
+		folderLine += detailMetaStyle.Render("  (" + simplifyProjectName(s.ProjectPath) + ")")
 	}
 	lines = append(lines, folderLine)
 

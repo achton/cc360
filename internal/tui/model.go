@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"time"
 
 	"github.com/achton/cc360/internal/config"
@@ -29,7 +33,7 @@ type Model struct {
 	detail          detailPane
 	filter          filterInput
 	picker          projectPicker
-	projectFilter   string // if set, only show sessions from this project
+	projectFilter   map[string]bool // if non-empty, only show sessions from these projects
 	spinner         spinner.Model
 	tableInit       bool
 	keys            keyMap
@@ -38,10 +42,11 @@ type Model struct {
 	statusMsg       string
 
 	// Background summarization state
-	summarizing  bool              // true while any summarization is in-flight
-	summaryDone  int               // completed count
-	summaryTotal int               // total queued
-	summaryCh    <-chan db.Session  // channel for auto-summarize workers
+	summarizing    bool              // true while any summarization is in-flight
+	summaryDone    int               // completed count
+	summaryTotal   int               // total queued
+	summaryFailed  int               // failed count
+	summaryCh      <-chan db.Session  // channel for auto-summarize workers
 }
 
 type execFinishedMsg struct{ err error }
@@ -178,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.filter.input.Focus()
 
 		case key.Matches(msg, m.keys.Picker):
-			m.picker.open(m.allSessions)
+			m.picker.open(m.allSessions, m.projectFilter)
 			return m, nil
 
 		case key.Matches(msg, m.keys.Reload):
@@ -215,7 +220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.activeIDs = m.activeIDs
 		// Clear filters and rebuild
 		m.filter.close()
-		m.projectFilter = ""
+		m.projectFilter = nil
 		m.sessions = m.allSessions
 		m.rebuildTable()
 		m.statusMsg = fmt.Sprintf("Reloaded — %d sessions", len(m.allSessions))
@@ -241,12 +246,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case key.Matches(msg, m.keys.Escape), key.Matches(msg, m.keys.Quit):
+	case key.Matches(msg, m.keys.Escape), key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Picker):
 		m.picker.close()
-		// Restore full list
-		m.sessions = m.allSessions
-		m.rebuildTable()
-		m.statusMsg = ""
 		return m, nil
 
 	case key.Matches(msg, m.keys.Up):
@@ -257,18 +258,30 @@ func (m *Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.picker.moveDown()
 		return m, nil
 
-	case key.Matches(msg, m.keys.Resume): // Enter
-		project := m.picker.selected()
+	case key.Matches(msg, m.keys.Resume): // Enter — apply selection
 		m.picker.close()
-		if project == "" {
-			return m, nil
+		selected := m.picker.selectedProjects()
+		if len(selected) == 0 {
+			m.projectFilter = nil
+		} else {
+			m.projectFilter = make(map[string]bool, len(selected))
+			for _, p := range selected {
+				m.projectFilter[p] = true
+			}
 		}
-		m.projectFilter = project
 		m.applyFilters()
 		return m, nil
 
-	case msg.Type == tea.KeyRunes && string(msg.Runes) == "s":
-		m.picker.toggleSort()
+	case msg.Type == tea.KeySpace:
+		m.picker.toggleSelect()
+		return m, nil
+
+	case msg.Type == tea.KeyRight:
+		m.picker.expand()
+		return m, nil
+
+	case msg.Type == tea.KeyLeft:
+		m.picker.collapse()
 		return m, nil
 	}
 
@@ -314,10 +327,10 @@ func (m *Model) applyFilters() {
 	result := m.allSessions
 
 	// Apply project filter first
-	if m.projectFilter != "" {
+	if len(m.projectFilter) > 0 {
 		filtered := make([]db.Session, 0)
 		for _, s := range result {
-			if s.ProjectName == m.projectFilter {
+			if m.projectFilter[s.ProjectName] {
 				filtered = append(filtered, s)
 			}
 		}
@@ -343,17 +356,10 @@ func (m *Model) applyFilters() {
 	m.updateStatusFromFilters()
 }
 
-// clearFilters clears text filter first, then project filter on second press.
+// clearFilters clears the text filter only. Project filter is managed via the picker.
 func (m *Model) clearFilters() {
 	if m.filter.value() != "" {
-		// First: clear text filter
 		m.filter.close()
-		m.applyFilters()
-		return
-	}
-	if m.projectFilter != "" {
-		// Second: clear project filter
-		m.projectFilter = ""
 		m.applyFilters()
 		return
 	}
@@ -362,8 +368,17 @@ func (m *Model) clearFilters() {
 
 func (m *Model) updateStatusFromFilters() {
 	var parts []string
-	if m.projectFilter != "" {
-		parts = append(parts, m.projectFilter)
+	if len(m.projectFilter) > 0 {
+		if len(m.projectFilter) <= 3 {
+			names := make([]string, 0, len(m.projectFilter))
+			for name := range m.projectFilter {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			parts = append(parts, strings.Join(names, ", "))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d projects", len(m.projectFilter)))
+		}
 	}
 	if m.filter.value() != "" {
 		parts = append(parts, "\""+m.filter.value()+"\"")
@@ -387,15 +402,13 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	headerText := fmt.Sprintf("CC360 — %d sessions", len(m.allSessions))
-	if len(m.sessions) != len(m.allSessions) {
-		headerText = fmt.Sprintf("CC360 — %d/%d sessions", len(m.sessions), len(m.allSessions))
-	}
+	headerText := headerAppStyle.Render("CC360") + headerTagStyle.Render(" // built by @achton")
 	header := headerStyle.Width(m.width).Render(headerText)
 
-	// Project picker replaces the main table view
-	if m.picker.active {
-		return header + "\n" + m.picker.view(m.width, m.height-1)
+	if len(m.sessions) != len(m.allSessions) {
+		m.table.sessionInfo = fmt.Sprintf("%d/%d sessions", len(m.sessions), len(m.allSessions))
+	} else {
+		m.table.sessionInfo = fmt.Sprintf("%d sessions", len(m.allSessions))
 	}
 
 	var filterLine string
@@ -415,11 +428,33 @@ func (m Model) View() string {
 	if m.summarizing {
 		statusText = m.spinner.View() + " " + m.statusMsg
 	}
+	// Truncate to prevent wrapping (padding takes 2 chars of horizontal space)
+	if maxW := m.width - 2; maxW > 0 {
+		statusText = ansi.Truncate(statusText, maxW, "…")
+	}
 	status := statusStyle.Width(m.width).Render(statusText)
 
 	help := m.renderHelp()
 
-	return fmt.Sprintf("%s\n%s%s%s\n%s\n%s", header, filterLine, tbl, detail, status, help)
+	base := fmt.Sprintf("%s\n%s%s%s\n%s\n%s", header, filterLine, tbl, detail, status, help)
+
+	if m.picker.active {
+		pickerHeight := m.height * 2 / 3
+		if pickerHeight < 8 {
+			pickerHeight = 8
+		}
+		pickerWidth := m.width * 3 / 4
+		if pickerWidth < 40 {
+			pickerWidth = 40
+		}
+		if pickerWidth > m.width {
+			pickerWidth = m.width
+		}
+		box := m.picker.view(pickerWidth, pickerHeight)
+		base = overlayCenter(base, box, m.width, m.height)
+	}
+
+	return base
 }
 
 func (m Model) renderHelp() string {
@@ -434,10 +469,11 @@ func (m Model) renderHelp() string {
 		{"r", "reload"},
 		{"q", "quit"},
 	}
+	sep := helpSepStyle.Render(" · ")
 	var s string
 	for i, p := range pairs {
 		if i > 0 {
-			s += "  "
+			s += sep
 		}
 		s += helpKeyStyle.Render(p.key) + " " + helpDescStyle.Render(p.desc)
 	}
@@ -445,12 +481,17 @@ func (m Model) renderHelp() string {
 }
 
 func (m Model) tableHeight() int {
-	h := m.height
+	// Chrome: header(1) + status(1) + help(1) = 3 fixed lines
+	h := m.height - 3
 	if m.detail.visible {
-		h -= detailHeight
+		// detail pane rendered height includes border
+		h -= lipgloss.Height(m.detail.view(m.selectedSession(), m.width, false))
 	}
 	if m.filter.visible() {
-		h-- // filter input takes one line
+		h -= lipgloss.Height(m.filter.view(m.width))
+	}
+	if h < 4 {
+		h = 4
 	}
 	return h
 }
@@ -476,6 +517,7 @@ func (m *Model) startAutoSummarize() tea.Cmd {
 
 	m.summarizing = true
 	m.summaryDone = 0
+	m.summaryFailed = 0
 	m.summaryTotal = len(unsummarized)
 	m.statusMsg = fmt.Sprintf("Summarizing 0/%d...", m.summaryTotal)
 
@@ -528,21 +570,26 @@ func (m *Model) startSingleSummarize() tea.Cmd {
 		return nil
 	}
 	if s.JSONLPath == "" {
-		m.statusMsg = "No JSONL file for this session"
+		m.statusMsg = "Cannot summarize: no JSONL file for this session"
 		return nil
 	}
 	if _, err := os.Stat(s.JSONLPath); err != nil {
-		m.statusMsg = "JSONL file no longer exists"
+		m.statusMsg = "Cannot summarize: JSONL file no longer exists"
 		return nil
 	}
 	if s.Title != "" && !s.SummarizedAt.IsZero() && !s.Modified.After(s.SummarizedAt) {
 		m.statusMsg = "Already summarized (not modified since)"
 		return nil
 	}
+	if m.activeIDs[s.SessionID] {
+		m.statusMsg = "Cannot summarize: session is active (data not flushed to disk yet)"
+		return nil
+	}
 
 	if !m.summarizing {
 		m.summarizing = true
 		m.summaryDone = 0
+		m.summaryFailed = 0
 		m.summaryTotal = 1
 	} else {
 		m.summaryTotal++
@@ -568,7 +615,9 @@ func (m *Model) startSingleSummarize() tea.Cmd {
 func (m *Model) handleSummarizeResult(msg summarizeResultMsg) tea.Cmd {
 	m.summaryDone++
 
-	if msg.err == nil {
+	if msg.err != nil {
+		m.summaryFailed++
+	} else {
 		// Update DB
 		if err := m.db.SetSummary(msg.sessionID, msg.title, msg.summary); err == nil {
 			// Update in-memory sessions (both allSessions and filtered sessions)
@@ -587,13 +636,23 @@ func (m *Model) handleSummarizeResult(msg summarizeResultMsg) tea.Cmd {
 				}
 			}
 			m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeIDs)
+		} else {
+			m.summaryFailed++
 		}
 	}
 
 	if m.summaryDone >= m.summaryTotal {
 		m.summarizing = false
 		m.summaryCh = nil
-		m.statusMsg = fmt.Sprintf("Summarized %d sessions", m.summaryTotal)
+		succeeded := m.summaryTotal - m.summaryFailed
+		switch {
+		case m.summaryFailed > 0 && succeeded == 0:
+			m.statusMsg = fmt.Sprintf("Summarization failed: %v", msg.err)
+		case m.summaryFailed > 0:
+			m.statusMsg = fmt.Sprintf("Summarized %d sessions (%d failed)", succeeded, m.summaryFailed)
+		default:
+			m.statusMsg = fmt.Sprintf("Summarized %d sessions", succeeded)
+		}
 		return nil
 	}
 
@@ -646,6 +705,11 @@ func (m *Model) reloadCmd() tea.Cmd {
 			}
 			if strings.HasPrefix(s.FirstPrompt, "<teammate-message") {
 				continue
+			}
+			if s.ProjectPath != "" {
+				if _, err := os.Stat(s.ProjectPath); err != nil {
+					continue
+				}
 			}
 			filtered = append(filtered, s)
 		}
@@ -712,6 +776,61 @@ func (m *Model) openShell() tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return execFinishedMsg{err: err}
 	})
+}
+
+// overlayCenter composites the overlay box centered on top of the base view,
+// preserving the background content around the overlay with ANSI-aware truncation.
+func overlayCenter(base, overlay string, width, height int) string {
+	fgLines := strings.Split(overlay, "\n")
+	bgLines := strings.Split(base, "\n")
+
+	fgW, fgH := lipgloss.Size(overlay)
+	bgH := len(bgLines)
+
+	// Center the overlay
+	x := (width - fgW) / 2
+	y := (bgH - fgH) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+
+	var sb strings.Builder
+	for i, bgLine := range bgLines {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		if i < y || i >= y+fgH {
+			sb.WriteString(bgLine)
+			continue
+		}
+
+		pos := 0
+		if x > 0 {
+			left := ansi.Truncate(bgLine, x, "")
+			pos = ansi.StringWidth(left)
+			sb.WriteString(left)
+			if pos < x {
+				sb.WriteString(strings.Repeat(" ", x-pos))
+				pos = x
+			}
+		}
+
+		fgLine := fgLines[i-y]
+		sb.WriteString(fgLine)
+		pos += ansi.StringWidth(fgLine)
+
+		right := ansi.TruncateLeft(bgLine, pos, "")
+		bgW := ansi.StringWidth(bgLine)
+		rightW := ansi.StringWidth(right)
+		if rightW <= bgW-pos {
+			sb.WriteString(strings.Repeat(" ", bgW-rightW-pos))
+		}
+		sb.WriteString(right)
+	}
+	return sb.String()
 }
 
 func (m *Model) copyResumeCommand() {

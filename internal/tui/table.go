@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/achton/cc360/internal/db"
 	"github.com/charmbracelet/lipgloss"
@@ -16,13 +17,14 @@ type column struct {
 
 // sessionTable renders a fixed header + scrollable rows with a highlighted cursor row.
 type sessionTable struct {
-	columns   []column
-	rows      [][]string
-	activeIDs map[string]bool
-	cursor    int
-	offset    int // first visible row index
-	height    int // number of visible data rows
-	width     int
+	columns     []column
+	rows        [][]string
+	activeIDs   map[string]bool
+	sessionInfo string // e.g. "42 sessions" — shown on the indicator line
+	cursor      int
+	offset      int // first visible row index
+	height      int // number of visible data rows
+	width       int
 }
 
 func newSessionTable(sessions []db.Session, width, availHeight int, activeIDs map[string]bool) sessionTable {
@@ -42,11 +44,11 @@ func (t *sessionTable) resize(sessions []db.Session, width, availHeight int) {
 	t.SetCursor(cursor)
 }
 
-// setHeight sets visible data rows. availHeight is total terminal height
-// minus any detail pane, but still including chrome.
+// setHeight sets visible data rows. availHeight is the space available for the
+// entire table view (header + separator + data rows + scroll indicator).
 func (t *sessionTable) setHeight(availHeight int) {
-	// Chrome: app header(1) + column header(1) + separator(1) + status(1) + help(1) = 5
-	h := availHeight - 5
+	// Table chrome: column header(1) + separator(1) + scroll indicator(1) = 3
+	h := availHeight - 3
 	if h < 2 {
 		h = 2
 	}
@@ -93,22 +95,82 @@ func (t *sessionTable) clampView() {
 // colGap is the number of spaces prepended before each column (except the first).
 const colGap = 2
 
+// colRole identifies the semantic role of a column for styling.
+type colRole int
+
+const (
+	colNormal colRole = iota
+	colTitle
+	colBranch
+)
+
+// columnRoles returns the role for each column index.
+func columnRoles(numCols int) []colRole {
+	// 0=Date, 1=Title, 2=Folder, 3=Branch (if present), 4=Msgs (if present)
+	roles := make([]colRole, numCols)
+	roles[1] = colTitle
+	if numCols >= 4 {
+		roles[3] = colBranch
+	}
+	return roles
+}
+
 // renderCell renders a single cell padded/truncated to the column width.
-// If first is false, colGap spaces are prepended.
-func renderCell(value string, width int, first bool) string {
-	s := lipgloss.NewStyle().Width(width).MaxWidth(width).Inline(true).Render(value)
+// role controls per-column styling; selected composes with selection background.
+func renderCell(value string, width int, first bool, role colRole, selected bool) string {
+	base := lipgloss.NewStyle().Width(width).MaxWidth(width).Inline(true)
+
+	switch role {
+	case colTitle:
+		// Split "title: summary" and style title portion bold+colored
+		// The raw value uses " — " as separator (set in buildRows)
+		if parts := strings.SplitN(value, " — ", 2); len(parts) == 2 {
+			titleStyle := titleBoldStyle
+			if selected {
+				titleStyle = titleStyle.Background(colorSurface0)
+			}
+			summaryStyle := lipgloss.NewStyle()
+			if selected {
+				summaryStyle = summaryStyle.Background(colorSurface0)
+			}
+			value = titleStyle.Render(parts[0]) + summaryStyle.Render(": "+parts[1])
+		} else if value != "" {
+			titleStyle := titleBoldStyle
+			if selected {
+				titleStyle = titleStyle.Background(colorSurface0)
+			}
+			value = titleStyle.Render(value)
+		}
+	case colBranch:
+		style := dimStyle
+		if selected {
+			style = style.Background(colorSurface0)
+		}
+		value = style.Render(value)
+	}
+
+	if selected {
+		base = base.Background(colorSurface0)
+	}
+
+	s := base.Render(value)
 	if !first {
-		s = strings.Repeat(" ", colGap) + s
+		gap := strings.Repeat(" ", colGap)
+		if selected {
+			gap = lipgloss.NewStyle().Background(colorSurface0).Render(gap)
+		}
+		s = gap + s
 	}
 	return s
 }
 
-// View renders column header + separator + visible rows.
-// Returns exactly height+2 lines.
+// View renders column header + separator + visible rows + scroll indicator.
+// Always returns exactly height+3 lines for stable layout.
 func (t *sessionTable) View() string {
 	var b strings.Builder
 
-	// Column header
+	// Column header with indent to align with accent bar
+	b.WriteString("  ") // align with "▎ " on data rows
 	for i, col := range t.columns {
 		hdr := colHdrStyle.Width(col.Width).MaxWidth(col.Width).Render(
 			truncate(col.Title, col.Width),
@@ -121,7 +183,7 @@ func (t *sessionTable) View() string {
 	b.WriteByte('\n')
 
 	// Separator
-	b.WriteString(sepStyle.Width(t.width).Render(strings.Repeat("─", t.width)))
+	b.WriteString(sepStyle.Render(strings.Repeat("╌", t.width)))
 	b.WriteByte('\n')
 
 	// Data rows
@@ -129,18 +191,21 @@ func (t *sessionTable) View() string {
 	if end > len(t.rows) {
 		end = len(t.rows)
 	}
+	roles := columnRoles(len(t.columns))
 	for i := t.offset; i < end; i++ {
+		isSel := i == t.cursor
 		var line string
 		for j, col := range t.columns {
 			cell := ""
 			if j < len(t.rows[i]) {
 				cell = t.rows[i][j]
 			}
-			line += renderCell(cell, col.Width, j == 0)
+			line += renderCell(cell, col.Width, j == 0, roles[j], isSel)
 		}
-		// Apply selection style to entire line (NOT per-cell)
-		if i == t.cursor {
-			line = selectedStyle.Render(line)
+		if isSel {
+			line = selectedBarStyle.Render("▎") + selectedStyle.Render(" ") + line
+		} else {
+			line = "  " + line
 		}
 		b.WriteString(line)
 		if i < end-1 {
@@ -155,6 +220,21 @@ func (t *sessionTable) View() string {
 			b.WriteByte('\n')
 		}
 		b.WriteString(strings.Repeat(" ", t.width))
+	}
+
+	// Info line (always rendered to keep height stable)
+	b.WriteByte('\n')
+	info := t.sessionInfo
+	if end < len(t.rows) {
+		remaining := len(t.rows) - end
+		if info != "" {
+			info += fmt.Sprintf(" · ↓ %d more", remaining)
+		} else {
+			info = fmt.Sprintf("↓ %d more", remaining)
+		}
+	}
+	if info != "" {
+		b.WriteString(mutedStyle.Render("  " + info))
 	}
 
 	return b.String()
@@ -260,6 +340,33 @@ func truncate(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
+// relativeDate formats a time as a human-friendly relative date.
+func relativeDate(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+
+	diff := today.Sub(day)
+	switch {
+	case diff < 0:
+		return t.Format("15:04")
+	case diff == 0:
+		return "Today " + t.Format("15:04")
+	case diff < 24*time.Hour:
+		return "Yesterday"
+	case diff < 7*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		return fmt.Sprintf("%dd ago", days)
+	case t.Year() == now.Year():
+		return t.Format("Jan _2")
+	default:
+		return t.Format("2006-01-02")
+	}
+}
+
 // buildRows converts sessions into pre-formatted table rows.
 func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[string]bool) [][]string {
 	showBranch := width >= 90
@@ -267,27 +374,38 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 
 	rows := make([][]string, len(sessions))
 	for i, s := range sessions {
-		date := ""
-		if !s.Modified.IsZero() {
-			date = s.Modified.Format("2006-01-02")
-		} else if !s.Created.IsZero() {
-			date = s.Created.Format("2006-01-02")
+		ts := s.Modified
+		if ts.IsZero() {
+			ts = s.Created
 		}
+		date := relativeDate(ts)
 		if activeIDs[s.SessionID] {
-			date += " *"
+			date += " " + activeStyle.Render("●")
 		}
 
+		// Title: use " — " as separator so renderCell can style parts independently
 		title := sanitize(s.Title)
-		if title != "" && s.Summary != "" {
-			title += " — " + sanitize(s.Summary)
-		} else if title == "" {
+		summary := sanitize(s.Summary)
+		if title != "" && summary != "" {
+			title = title + " — " + summary
+		} else if title != "" {
+			// Has title but no summary yet — show title with first prompt as context
+			fp := sanitize(s.FirstPrompt)
+			if fp != "" {
+				title = title + " — " + fp
+			}
+		} else {
+			// No title — use existing summary or first prompt as fallback
 			title = sanitize(s.ExistingSummary)
-		}
-		if title == "" {
-			title = sanitize(s.FirstPrompt)
+			if title == "" {
+				title = sanitize(s.FirstPrompt)
+			}
+			if title == "" {
+				title = sanitize(s.ProjectName)
+			}
 		}
 
-		row := []string{date, title, sanitize(s.ProjectName)}
+		row := []string{date, title, sanitize(simplifyProjectName(s.ProjectName))}
 		if showBranch {
 			row = append(row, sanitize(s.GitBranch))
 		}
