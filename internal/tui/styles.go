@@ -29,8 +29,8 @@ var (
 			Background(colorSurface0)
 
 	headerTagStyle = lipgloss.NewStyle().
-				Foreground(colorDim).
-				Background(colorSurface0)
+			Foreground(colorDim).
+			Background(colorSurface0)
 
 	headerStyle = lipgloss.NewStyle().
 			Padding(0, 1).

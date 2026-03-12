@@ -42,11 +42,11 @@ type Model struct {
 	statusMsg       string
 
 	// Background summarization state
-	summarizing    bool              // true while any summarization is in-flight
-	summaryDone    int               // completed count
-	summaryTotal   int               // total queued
-	summaryFailed  int               // failed count
-	summaryCh      <-chan db.Session  // channel for auto-summarize workers
+	summarizing   bool              // true while any summarization is in-flight
+	summaryDone   int               // completed count
+	summaryTotal  int               // total queued
+	summaryFailed int               // failed count
+	summaryCh     <-chan db.Session // channel for auto-summarize workers
 }
 
 type execFinishedMsg struct{ err error }

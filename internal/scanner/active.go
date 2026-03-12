@@ -45,9 +45,9 @@ func ActiveSessionIDs(sessions []Session) map[string]bool {
 
 	// Collect claude processes with their info
 	type claudeProc struct {
-		pid       string
-		resumeID  string // empty if fresh session
-		cwd       string
+		pid      string
+		resumeID string // empty if fresh session
+		cwd      string
 	}
 	var claudeProcs []claudeProc
 

@@ -269,17 +269,17 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	firstPrompt = truncateField(firstPrompt, maxFirstPromptLen)
 
 	return &Session{
-		SessionID:   sessionID,
-		ProjectName: deriveProjectName(cwd, scanPaths),
-		ProjectPath: cwd,
-		ClaudeDir:   filepath.Dir(path),
-		FirstPrompt: firstPrompt,
+		SessionID:    sessionID,
+		ProjectName:  deriveProjectName(cwd, scanPaths),
+		ProjectPath:  cwd,
+		ClaudeDir:    filepath.Dir(path),
+		FirstPrompt:  firstPrompt,
 		MessageCount: msgCount,
-		Created:     parseTime(firstTimestamp),
-		Modified:    parseTime(lastTimestamp),
-		GitBranch:   gitBranch,
-		IsSidechain: isSidechain,
-		JSONLPath:   path,
+		Created:      parseTime(firstTimestamp),
+		Modified:     parseTime(lastTimestamp),
+		GitBranch:    gitBranch,
+		IsSidechain:  isSidechain,
+		JSONLPath:    path,
 	}
 }
 

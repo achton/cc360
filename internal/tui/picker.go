@@ -11,13 +11,13 @@ import (
 
 // treeNode represents a node in the project tree.
 type treeNode struct {
-	label       string   // display label
-	projectName string   // full project name for leaves
-	count       int      // session count (leaf) or sum of children (group)
+	label       string // display label
+	projectName string // full project name for leaves
+	count       int    // session count (leaf) or sum of children (group)
 	children    []*treeNode
 	selected    bool
 	expanded    bool
-	worktree    bool     // true if this project is a worktree
+	worktree    bool // true if this project is a worktree
 }
 
 func (n *treeNode) isGroup() bool { return len(n.children) > 0 }

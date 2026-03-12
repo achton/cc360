@@ -12,7 +12,7 @@ import (
 
 // shellQuote wraps a value in single quotes with proper escaping for safe
 // interpolation into shell command strings. Single quotes within the value
-// are replaced with the sequence '\'' (end quote, escaped quote, start quote).
+// are replaced with the sequence '\” (end quote, escaped quote, start quote).
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
