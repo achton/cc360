@@ -405,7 +405,11 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 			}
 		}
 
-		row := []string{date, title, sanitize(simplifyProjectName(s.ProjectName))}
+		folder := sanitize(simplifyProjectName(s.ProjectName))
+		if strings.Contains(s.ProjectName, "/.claude/worktrees/") {
+			folder += " " + pickerWorktreeStyle.Render("⌥")
+		}
+		row := []string{date, title, folder}
 		if showBranch {
 			row = append(row, sanitize(s.GitBranch))
 		}
