@@ -16,7 +16,11 @@
       "Bash(grep:*)",
       "Bash(/tmp/dbcheck.go:*)",
       "Bash(gh auth:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:leg100.github.io)",
+      "WebFetch(domain:packagemain.tech)",
+      "Bash(sqlite3:*)"
     ]
   }
 }
