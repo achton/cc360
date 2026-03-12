@@ -68,14 +68,20 @@ func decodeDirName(name string) string {
 }
 
 // shouldInclude checks if a Claude project dir falls under any scan path.
+// It rejects paths containing ".." to prevent path traversal attacks.
 func shouldInclude(dirName string, scanPaths []string) bool {
 	decoded := decodeDirName(dirName)
+	cleaned := filepath.Clean(decoded)
+	// Reject paths that contain ".." traversal components
+	if strings.Contains(cleaned, "..") {
+		return false
+	}
 	home, _ := os.UserHomeDir()
-	if decoded == home {
+	if cleaned == home {
 		return true
 	}
 	for _, sp := range scanPaths {
-		if strings.HasPrefix(decoded, sp) {
+		if strings.HasPrefix(cleaned, sp+"/") || cleaned == sp {
 			return true
 		}
 	}
@@ -149,6 +155,22 @@ func extractUserMessage(raw json.RawMessage) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Field length limits for parsed JSONL metadata.
+const (
+	maxSessionIDLen   = 100
+	maxCwdLen         = 4096
+	maxGitBranchLen   = 256
+	maxFirstPromptLen = 1000
+)
+
+// truncateField truncates a string to maxLen if it exceeds the limit.
+func truncateField(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }
 
 // parseOrphanJSONL reads the first ~15 lines of a JSONL file to extract session metadata.
@@ -239,6 +261,12 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	if cwd == "" {
 		return nil
 	}
+
+	// Truncate fields to prevent unbounded memory usage from malicious JSONL
+	sessionID = truncateField(sessionID, maxSessionIDLen)
+	cwd = truncateField(cwd, maxCwdLen)
+	gitBranch = truncateField(gitBranch, maxGitBranchLen)
+	firstPrompt = truncateField(firstPrompt, maxFirstPromptLen)
 
 	return &Session{
 		SessionID:   sessionID,

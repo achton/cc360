@@ -1,6 +1,7 @@
 package summarizer
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,35 @@ func TestParseResponse(t *testing.T) {
 			}
 			if summary != tt.wantSummary {
 				t.Errorf("summary = %q, want %q", summary, tt.wantSummary)
+			}
+		})
+	}
+}
+
+func TestValidateModelName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"simple name", "sonnet", false},
+		{"name with hyphens and dots", "claude-3.5-sonnet", false},
+		{"name with underscores", "my_model_v2", false},
+		{"empty string", "", true},
+		{"with semicolons", "model;rm -rf /", true},
+		{"with spaces", "model name", true},
+		{"with backticks", "model`whoami`", true},
+		{"with dollar sign", "model$(cmd)", true},
+		{"with slashes", "path/to/model", true},
+		{"very long string", strings.Repeat("a", 51), true},
+		{"exactly 50 chars", strings.Repeat("a", 50), false},
+		{"with newline", "model\nname", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateModelName(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateModelName(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 			}
 		})
 	}

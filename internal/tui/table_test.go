@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSanitize(t *testing.T) {
 	tests := []struct {
@@ -101,6 +104,58 @@ func TestClamp(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("clamp(%d, %d, %d) = %d, want %d", tt.v, tt.lo, tt.hi, got, tt.want)
 		}
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"normal string", "hello", "'hello'"},
+		{"string with spaces", "/home/user/my project", "'/home/user/my project'"},
+		{"string with single quotes", "it's a test", "'it'\\''s a test'"},
+		{"command substitution", "$(rm -rf /)", "'$(rm -rf /)'"},
+		{"semicolon injection", "foo; rm -rf /", "'foo; rm -rf /'"},
+		{"backtick injection", "`whoami`", "'`whoami`'"},
+		{"empty string", "", "''"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shellQuote(tt.input)
+			if got != tt.want {
+				t.Errorf("shellQuote(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsValidSessionID(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"valid UUID", "abc-123-def-456", true},
+		{"valid alphanumeric", "session123", true},
+		{"empty string", "", false},
+		{"with semicolons", "abc;rm -rf /", false},
+		{"with backticks", "abc`whoami`", false},
+		{"with spaces", "abc def", false},
+		{"with dollar sign", "$(cmd)", false},
+		{"very long string", strings.Repeat("a", 101), false},
+		{"exactly 100 chars", strings.Repeat("a", 100), true},
+		{"with slashes", "abc/def", false},
+		{"with newline", "abc\ndef", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidSessionID(tt.input)
+			if got != tt.want {
+				t.Errorf("isValidSessionID(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 

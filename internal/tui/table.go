@@ -2,12 +2,32 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/achton/cc360/internal/db"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// shellQuote wraps a value in single quotes with proper escaping for safe
+// interpolation into shell command strings. Single quotes within the value
+// are replaced with the sequence '\'' (end quote, escaped quote, start quote).
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// sessionIDPattern matches valid session IDs: alphanumeric plus hyphens, max 100 chars.
+var sessionIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+// isValidSessionID checks that a session ID matches the expected format:
+// alphanumeric characters and hyphens only, between 1 and 100 characters.
+func isValidSessionID(id string) bool {
+	if len(id) == 0 || len(id) > 100 {
+		return false
+	}
+	return sessionIDPattern.MatchString(id)
+}
 
 // column defines a table column.
 type column struct {

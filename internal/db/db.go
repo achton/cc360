@@ -161,28 +161,36 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 	return tx.Commit()
 }
 
+// allowedOrderClauses maps valid sortBy values to pre-built ORDER BY clauses.
+// Using a whitelist of static strings prevents SQL injection via sortBy.
+var allowedOrderClauses = map[string]map[bool]string{
+	"modified": {
+		true:  "modified DESC",
+		false: "modified ASC",
+	},
+	"created": {
+		true:  "created DESC",
+		false: "created ASC",
+	},
+	"messages": {
+		true:  "message_count DESC",
+		false: "message_count ASC",
+	},
+	"project": {
+		true:  "project_name DESC, modified DESC",
+		false: "project_name ASC, modified DESC",
+	},
+}
+
 // AllSessions returns sessions sorted by the given field.
 func (db *DB) AllSessions(sortBy string, desc bool) ([]Session, error) {
-	orderCol := "modified"
-	switch sortBy {
-	case "created":
-		orderCol = "created"
-	case "messages":
-		orderCol = "message_count"
-	case "project":
-		orderCol = "project_name"
+	clauses, ok := allowedOrderClauses[sortBy]
+	if !ok {
+		clauses = allowedOrderClauses["modified"]
 	}
-	dir := "ASC"
-	if desc {
-		dir = "DESC"
-	}
-	// For project sort, secondary sort by modified DESC
-	orderClause := fmt.Sprintf("%s %s", orderCol, dir)
-	if sortBy == "project" {
-		orderClause += ", modified DESC"
-	}
+	orderClause := clauses[desc]
 
-	query := fmt.Sprintf("SELECT * FROM sessions ORDER BY %s", orderClause)
+	query := "SELECT * FROM sessions ORDER BY " + orderClause
 	return db.querySessions(query)
 }
 
@@ -204,7 +212,8 @@ func (db *DB) Unsummarized(limit int) ([]Session, error) {
 		WHERE title IS NULL AND jsonl_path IS NOT NULL AND jsonl_path != ''
 		ORDER BY modified DESC`
 	if limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", limit)
+		query += " LIMIT ?"
+		return db.querySessions(query, limit)
 	}
 	return db.querySessions(query)
 }

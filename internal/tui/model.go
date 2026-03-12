@@ -752,6 +752,10 @@ func (m *Model) resumeSession() tea.Cmd {
 	if !m.checkProjectPath(s) {
 		return nil
 	}
+	if !isValidSessionID(s.SessionID) {
+		m.statusMsg = "Invalid session ID"
+		return nil
+	}
 	c := exec.Command("claude", "--resume", s.SessionID)
 	c.Dir = s.ProjectPath
 	return tea.ExecProcess(c, func(err error) tea.Msg {
@@ -827,7 +831,11 @@ func (m *Model) copyResumeCommand() {
 	if !m.checkProjectPath(s) {
 		return
 	}
-	cmd := fmt.Sprintf("cd %s && claude --resume %s", s.ProjectPath, s.SessionID)
+	if !isValidSessionID(s.SessionID) {
+		m.statusMsg = "Invalid session ID"
+		return
+	}
+	cmd := fmt.Sprintf("cd %s && claude --resume %s", shellQuote(s.ProjectPath), shellQuote(s.SessionID))
 	encoded := base64.StdEncoding.EncodeToString([]byte(cmd))
 	fmt.Fprintf(os.Stderr, "\033]52;c;%s\007", encoded)
 	m.statusMsg = "Copied resume command to clipboard"

@@ -7,11 +7,31 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/achton/cc360/internal/db"
 )
+
+// modelNamePattern matches valid model names: alphanumeric, hyphens, underscores, dots.
+var modelNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// ValidateModelName checks that a model name is safe to pass to exec.Command.
+// Valid names contain only alphanumeric characters, hyphens, underscores, and dots,
+// with a length between 1 and 50 characters.
+func ValidateModelName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("model name must not be empty")
+	}
+	if len(name) > 50 {
+		return fmt.Errorf("model name too long (max 50 chars)")
+	}
+	if !modelNamePattern.MatchString(name) {
+		return fmt.Errorf("model name contains invalid characters: %q", name)
+	}
+	return nil
+}
 
 type messageContent struct {
 	Role    string `json:"role"`
@@ -98,6 +118,9 @@ User messages:
 
 // Summarize generates a title and summary for a session by calling claude --print.
 func Summarize(session db.Session, model string) (title string, summary string, err error) {
+	if err := ValidateModelName(model); err != nil {
+		return "", "", fmt.Errorf("invalid model name: %w", err)
+	}
 	if session.JSONLPath == "" {
 		return "", "", fmt.Errorf("no JSONL path for session %s", session.SessionID)
 	}

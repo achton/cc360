@@ -153,6 +153,66 @@ func TestUnsummarized(t *testing.T) {
 	}
 }
 
+func TestAllSessionsSQLInjection(t *testing.T) {
+	db := testDB(t)
+
+	// Insert some test data
+	db.Upsert([]scanner.Session{
+		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test", FirstPrompt: "hello"},
+		{SessionID: "b", ProjectName: "test2", ClaudeDir: "/test2", FirstPrompt: "world"},
+	})
+
+	// Attempt SQL injection via sortBy parameter
+	malicious := "modified; DROP TABLE sessions--"
+	sessions, err := db.AllSessions(malicious, true)
+	if err != nil {
+		t.Fatalf("AllSessions with malicious sortBy should not error, got: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+
+	// Verify the sessions table still exists by querying it again
+	sessions2, err := db.AllSessions("modified", true)
+	if err != nil {
+		t.Fatalf("sessions table should still exist after injection attempt: %v", err)
+	}
+	if len(sessions2) != 2 {
+		t.Errorf("expected 2 sessions after injection attempt, got %d", len(sessions2))
+	}
+}
+
+func TestUnsummarizedWithLimit(t *testing.T) {
+	db := testDB(t)
+
+	db.Upsert([]scanner.Session{
+		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/a.jsonl",
+			Modified: time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)},
+		{SessionID: "b", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/b.jsonl",
+			Modified: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)},
+		{SessionID: "c", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/c.jsonl",
+			Modified: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
+	})
+
+	// Limit to 2 results
+	unsummarized, err := db.Unsummarized(2)
+	if err != nil {
+		t.Fatalf("Unsummarized: %v", err)
+	}
+	if len(unsummarized) != 2 {
+		t.Errorf("expected 2 unsummarized sessions with limit 2, got %d", len(unsummarized))
+	}
+
+	// No limit (0)
+	all, err := db.Unsummarized(0)
+	if err != nil {
+		t.Fatalf("Unsummarized(0): %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("expected 3 unsummarized sessions with no limit, got %d", len(all))
+	}
+}
+
 func TestPruneUnseen(t *testing.T) {
 	db := testDB(t)
 
