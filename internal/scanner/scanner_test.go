@@ -55,7 +55,7 @@ func TestDeriveProjectName(t *testing.T) {
 		want string
 	}{
 		{"/home/user/Code/myproject", "Code/myproject"},
-		{"/home/user/Code-private/homelab", "Code-private/homelab"},
+		{"/home/user/Code-private/myproject", "Code-private/myproject"},
 		{"/home/user/Code/nested/deep", "Code/nested/deep"},
 	}
 	for _, tt := range tests {

@@ -83,8 +83,8 @@ func shouldInclude(dirName string, scanPaths []string) bool {
 }
 
 // deriveProjectName returns a short name that includes the scan path's
-// own directory name. E.g. for path "/home/user/Code/private/homelab" with
-// scan path "~/Code", returns "Code/private/homelab".
+// own directory name. E.g. for path "/home/user/Code/private/myproject" with
+// scan path "~/Code", returns "Code/private/myproject".
 func deriveProjectName(projectPath string, scanPaths []string) string {
 	for _, sp := range scanPaths {
 		// Get the parent of the scan path so we keep its directory name
