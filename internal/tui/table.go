@@ -431,7 +431,11 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 
 		folder := sanitize(simplifyProjectName(s.ProjectName))
 		if isWorktreePath(s.ProjectName) {
-			folder += " " + pickerWorktreeStyle.Render("⌥")
+			wt := worktreeName(s.ProjectName)
+			if len(wt) > 20 {
+				wt = wt[:20] + "…"
+			}
+			folder += " " + pickerWorktreeStyle.Render("⌥ "+wt)
 		}
 		row := []string{date, title, folder}
 		if showBranch {

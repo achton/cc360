@@ -1,6 +1,6 @@
 Output demo.gif
-Set Width 1200
-Set Height 700
+Set Width 1400
+Set Height 750
 Set Theme "Catppuccin Mocha"
 Set FontFamily "Hack"
 Set FontSize 16
@@ -17,7 +17,9 @@ Show
 # Pause on the main view
 Sleep 3s
 
-# Navigate down slowly
+# Navigate down to show worktree sessions (⌥ indicators in folder column)
+Down
+Sleep 1s
 Down
 Sleep 1s
 Down
@@ -45,11 +47,11 @@ Sleep 3s
 Escape
 Sleep 2s
 
-# Open project picker
+# Open project picker — shows worktree names
 Type "p"
 Sleep 3s
 
-# Navigate picker
+# Navigate picker and select a group
 Down
 Sleep 800ms
 Down
