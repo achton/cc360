@@ -2,6 +2,8 @@
 
 A terminal UI for browsing, searching, filtering, and resuming [Claude Code](https://claude.ai/claude-code) sessions across multiple projects.
 
+![CC360 demo](demo.gif)
+
 ## Why
 
 After a reboot or across days of work, there's no easy way to see what Claude Code sessions existed, what they were about, or to resume them. Claude Code's `--resume` flag requires knowing the session ID. CC360 gives you a persistent, searchable overview of all sessions across your project directories.
