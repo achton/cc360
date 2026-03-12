@@ -437,7 +437,11 @@ func (p *projectPicker) view(width, height int) string {
 
 		wtTag := ""
 		if node.worktree {
-			wtTag = " " + pickerWorktreeStyle.Render("⌥ worktree")
+			wt := worktreeName(node.projectName)
+			if len(wt) > 20 {
+				wt = wt[:20] + "…"
+			}
+			wtTag = " " + pickerWorktreeStyle.Render("⌥ "+wt)
 		}
 
 		line := indent + check + prefix + label + countStr + wtTag
