@@ -38,7 +38,7 @@ Download the latest release for your platform from [GitHub Releases](https://git
 On first launch, CC360 creates a config file at `~/.config/cc360/config.toml` and exits with setup instructions. Edit the config to add your project directories:
 
 ```toml
-scan_paths = ["~/Code", "~/Code-private"]
+scan_paths = ["~/Code", "~/Projects"]
 ```
 
 Then run `cc360` again to launch the TUI.

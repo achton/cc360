@@ -50,14 +50,14 @@ func TestShouldInclude(t *testing.T) {
 }
 
 func TestDeriveProjectName(t *testing.T) {
-	scanPaths := []string{"/home/user/Code", "/home/user/Code-private"}
+	scanPaths := []string{"/home/user/Code", "/home/user/Projects"}
 
 	tests := []struct {
 		path string
 		want string
 	}{
 		{"/home/user/Code/myproject", "Code/myproject"},
-		{"/home/user/Code-private/myproject", "Code-private/myproject"},
+		{"/home/user/Projects/myproject", "Projects/myproject"},
 		{"/home/user/Code/nested/deep", "Code/nested/deep"},
 	}
 	for _, tt := range tests {
