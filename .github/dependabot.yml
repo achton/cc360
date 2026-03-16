@@ -18,4 +18,3 @@ updates:
       prefix: "ci(deps):"
     labels:
       - dependencies
-      - ci
