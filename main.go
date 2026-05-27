@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,12 +15,28 @@ import (
 	"github.com/achton/cc360/internal/tui"
 )
 
+// version is set via -ldflags by GoReleaser. For `go install` builds it stays
+// "dev", so buildVersion falls back to the module version from build info.
 var version = "dev"
+
+// buildVersion returns the release version, preferring the ldflags value and
+// falling back to the module version embedded by `go install`.
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return version
+}
 
 func main() {
 	// Handle --version / -v flag
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("cc360 %s\n", version)
+		fmt.Printf("cc360 %s\n", buildVersion())
 		return
 	}
 

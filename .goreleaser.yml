@@ -14,8 +14,22 @@ builds:
       - -s -w -X main.version={{.Version}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+nfpms:
+  - id: cc360
+    package_name: cc360
+    vendor: Achton Smidt Winther
+    homepage: "https://github.com/achton/cc360"
+    maintainer: "Achton Smidt Winther <achton@reload.dk>"
+    description: "Terminal UI for browsing and resuming Claude Code sessions"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
 
 checksum:
   name_template: "checksums.txt"

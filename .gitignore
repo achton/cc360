@@ -1,6 +1,9 @@
 # Binary
 cc360
 
+# GoReleaser build output
+dist/
+
 # IDE
 .idea/
 .vscode/

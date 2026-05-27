@@ -23,6 +23,24 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
 brew install achton/tap/cc360
 ```
 
+### Install script (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/achton/cc360/main/install.sh | sh
+```
+
+Installs the latest release to `/usr/local/bin` (override with `CC360_INSTALL_DIR`). Pin a version by passing it as an argument, e.g. `... | sh -s -- v0.3.0`.
+
+### Linux packages (.deb / .rpm / .apk)
+
+Download the package for your distro from [GitHub Releases](https://github.com/achton/cc360/releases/latest) and install it:
+
+```bash
+sudo dpkg -i cc360_*_linux_amd64.deb     # Debian / Ubuntu
+sudo rpm -i cc360_*_linux_amd64.rpm       # Fedora / RHEL / openSUSE
+sudo apk add --allow-untrusted cc360_*_linux_amd64.apk  # Alpine
+```
+
 ### Go
 
 ```bash
