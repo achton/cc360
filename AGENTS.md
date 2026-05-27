@@ -33,7 +33,7 @@ Disk scan → SQLite cache → TUI
 
 ### Concurrency
 
-Active session detection polls `/proc` every 15 seconds via `activeTickMsg`.
+Active session detection polls running processes every 15 seconds via `activeTickMsg`. Discovery is platform-specific behind a shared `matchActive` core: `/proc` on Linux (`active_linux.go`), `ps` + `lsof` on macOS (`active_darwin.go`).
 
 ### Styling
 

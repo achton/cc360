@@ -1,31 +1,36 @@
 package scanner
 
-import (
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-)
+import "sort"
+
+// claudeProc describes a running `claude` process discovered by a
+// platform-specific backend (see active_linux.go / active_darwin.go).
+type claudeProc struct {
+	pid      int
+	resumeID string // session ID from --resume, empty for a fresh session
+	cwd      string // working directory, empty if unavailable
+}
 
 // ActiveSessionIDs returns session IDs currently in use by a running claude
-// process. It reads /proc/*/cmdline for --resume args and matches fresh
-// sessions (no --resume) by CWD to the most recently modified session in
-// that directory.
+// process. Process discovery is platform-specific (claudeProcesses); the
+// matching logic is shared across platforms.
 func ActiveSessionIDs(sessions []Session) map[string]bool {
+	return matchActive(sessions, claudeProcesses())
+}
+
+// matchActive maps running claude processes to known session IDs. Resumed
+// sessions (--resume <id>) match exactly; fresh sessions are matched by CWD to
+// the most recently modified session in that directory, with newer processes
+// (higher PID) taking precedence.
+func matchActive(sessions []Session, procs []claudeProc) map[string]bool {
 	active := make(map[string]bool)
 
-	procs, err := filepath.Glob("/proc/[0-9]*/cmdline")
-	if err != nil {
-		return active
-	}
-
-	// Known session IDs for fast lookup
+	// Known session IDs for fast lookup.
 	knownIDs := make(map[string]bool, len(sessions))
 	for _, s := range sessions {
 		knownIDs[s.SessionID] = true
 	}
 
-	// Map CWD -> most recently modified session ID
+	// Map CWD -> most recently modified session ID.
 	type cwdSession struct {
 		id       string
 		modified int64
@@ -41,72 +46,19 @@ func ActiveSessionIDs(sessions []Session) map[string]bool {
 		}
 	}
 
-	myPID := os.Getpid()
-
-	// Collect claude processes with their info
-	type claudeProc struct {
-		pid      string
-		resumeID string // empty if fresh session
-		cwd      string
-	}
-	var claudeProcs []claudeProc
-
-	for _, cmdlineFile := range procs {
-		dir := filepath.Dir(cmdlineFile)
-		pidStr := filepath.Base(dir)
-
-		// Skip our own process
-		if pidStr == itoa(myPID) {
-			continue
-		}
-
-		data, err := os.ReadFile(cmdlineFile)
-		if err != nil {
-			continue
-		}
-
-		args := strings.Split(string(data), "\x00")
-		if len(args) == 0 {
-			continue
-		}
-
-		// Check if this is a claude process (the main binary, not subprocesses)
-		base := filepath.Base(args[0])
-		if base != "claude" {
-			continue
-		}
-
-		proc := claudeProc{pid: pidStr}
-
-		// Look for --resume <session-id>
-		for i, arg := range args {
-			if arg == "--resume" && i+1 < len(args) {
-				proc.resumeID = args[i+1]
-				break
-			}
-		}
-
-		// Read CWD
-		if cwd, err := os.Readlink(filepath.Join(dir, "cwd")); err == nil {
-			proc.cwd = cwd
-		}
-
-		claudeProcs = append(claudeProcs, proc)
-	}
-
-	// Process resumed sessions first (exact match)
-	for _, p := range claudeProcs {
+	// Resumed sessions first (exact match).
+	for _, p := range procs {
 		if p.resumeID != "" && knownIDs[p.resumeID] {
 			active[p.resumeID] = true
 		}
 	}
 
-	// Process fresh sessions: match CWD to most recent session
-	// Sort by PID descending so newer processes take precedence
-	sort.Slice(claudeProcs, func(i, j int) bool {
-		return claudeProcs[i].pid > claudeProcs[j].pid
+	// Fresh sessions: match CWD to the most recent session in that directory.
+	// Sort by PID descending so newer processes take precedence.
+	sort.Slice(procs, func(i, j int) bool {
+		return procs[i].pid > procs[j].pid
 	})
-	for _, p := range claudeProcs {
+	for _, p := range procs {
 		if p.resumeID != "" || p.cwd == "" {
 			continue
 		}
@@ -116,18 +68,4 @@ func ActiveSessionIDs(sessions []Session) map[string]bool {
 	}
 
 	return active
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

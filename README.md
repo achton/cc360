@@ -98,7 +98,7 @@ Filters stack: pick projects with `p`, then refine with `/`.
 
 ## Active session detection
 
-CC360 detects currently running Claude Code sessions by scanning `/proc/*/cmdline` for claude processes. Active sessions are marked with a green `●` next to the date and cannot be resumed (to prevent conflicts). Detection refreshes every 15 seconds.
+CC360 detects currently running Claude Code sessions by inspecting running `claude` processes — via `/proc` on Linux and `ps` + `lsof` on macOS. Active sessions are marked with a green `●` next to the date and cannot be resumed (to prevent conflicts). Detection refreshes every 15 seconds.
 
 ## How it works
 
@@ -141,7 +141,9 @@ internal/
   config/config.go              TOML config loading, first-run experience
   scanner/
     scanner.go                  Dual-source session discovery (index + orphan JSONL)
-    active.go                   Active session detection via /proc
+    active.go                   Active session detection (shared matching core)
+    active_linux.go             Process discovery via /proc (Linux)
+    active_darwin.go            Process discovery via ps + lsof (macOS)
   db/db.go                      SQLite cache (pure Go, no CGo)
   tui/
     model.go                    Bubbletea model, update loop, actions
