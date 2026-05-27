@@ -10,7 +10,6 @@ type keyMap struct {
 	Top       key.Binding
 	Bottom    key.Binding
 	Detail    key.Binding
-	Summarize key.Binding
 	Resume    key.Binding
 	Copy      key.Binding
 	Filter    key.Binding
@@ -49,10 +48,6 @@ func newKeyMap() keyMap {
 		Detail: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "detail"),
-		),
-		Summarize: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "summarize"),
 		),
 		Resume: key.NewBinding(
 			key.WithKeys("enter"),

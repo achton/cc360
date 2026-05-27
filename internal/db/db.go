@@ -206,28 +206,6 @@ func (db *DB) Search(query string) ([]Session, error) {
 	)
 }
 
-// Unsummarized returns sessions without AI-generated titles.
-func (db *DB) Unsummarized(limit int) ([]Session, error) {
-	query := `SELECT * FROM sessions
-		WHERE title IS NULL AND jsonl_path IS NOT NULL AND jsonl_path != ''
-		ORDER BY modified DESC`
-	if limit > 0 {
-		query += " LIMIT ?"
-		return db.querySessions(query, limit)
-	}
-	return db.querySessions(query)
-}
-
-// SetSummary stores an AI-generated title and summary.
-func (db *DB) SetSummary(sessionID, title, summary string) error {
-	now := formatTime(time.Now().UTC())
-	_, err := db.conn.Exec(
-		`UPDATE sessions SET title = ?, summary = ?, summarized_at = ? WHERE session_id = ?`,
-		title, summary, now, sessionID,
-	)
-	return err
-}
-
 // PruneUnseen deletes sessions that were not part of the current scan.
 // This handles deleted sessions, removed scan paths, etc.
 func (db *DB) PruneUnseen(currentIDs []string) (int64, error) {

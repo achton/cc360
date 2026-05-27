@@ -98,7 +98,13 @@ func TestUpsertPreservesSummary(t *testing.T) {
 		ClaudeDir:   "/test",
 	}}
 	db.Upsert(s)
-	db.SetSummary("abc-123", "My Title", "My summary")
+	// Simulate a stored title/summary (e.g. from a future summarizer).
+	if _, err := db.conn.Exec(
+		`UPDATE sessions SET title = ?, summary = ? WHERE session_id = ?`,
+		"My Title", "My summary", "abc-123",
+	); err != nil {
+		t.Fatalf("seed summary: %v", err)
+	}
 
 	// Re-upsert
 	db.Upsert(s)
@@ -134,25 +140,6 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-func TestUnsummarized(t *testing.T) {
-	db := testDB(t)
-
-	db.Upsert([]scanner.Session{
-		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/a.jsonl"},
-		{SessionID: "b", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/b.jsonl"},
-		{SessionID: "c", ProjectName: "test", ClaudeDir: "/test"}, // no JSONL
-	})
-	db.SetSummary("a", "Title A", "Summary A")
-
-	unsummarized, err := db.Unsummarized(10)
-	if err != nil {
-		t.Fatalf("Unsummarized: %v", err)
-	}
-	if len(unsummarized) != 1 || unsummarized[0].SessionID != "b" {
-		t.Errorf("expected [b], got %v", unsummarized)
-	}
-}
-
 func TestAllSessionsSQLInjection(t *testing.T) {
 	db := testDB(t)
 
@@ -179,37 +166,6 @@ func TestAllSessionsSQLInjection(t *testing.T) {
 	}
 	if len(sessions2) != 2 {
 		t.Errorf("expected 2 sessions after injection attempt, got %d", len(sessions2))
-	}
-}
-
-func TestUnsummarizedWithLimit(t *testing.T) {
-	db := testDB(t)
-
-	db.Upsert([]scanner.Session{
-		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/a.jsonl",
-			Modified: time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)},
-		{SessionID: "b", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/b.jsonl",
-			Modified: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)},
-		{SessionID: "c", ProjectName: "test", ClaudeDir: "/test", JSONLPath: "/tmp/c.jsonl",
-			Modified: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-	})
-
-	// Limit to 2 results
-	unsummarized, err := db.Unsummarized(2)
-	if err != nil {
-		t.Fatalf("Unsummarized: %v", err)
-	}
-	if len(unsummarized) != 2 {
-		t.Errorf("expected 2 unsummarized sessions with limit 2, got %d", len(unsummarized))
-	}
-
-	// No limit (0)
-	all, err := db.Unsummarized(0)
-	if err != nil {
-		t.Fatalf("Unsummarized(0): %v", err)
-	}
-	if len(all) != 3 {
-		t.Errorf("expected 3 unsummarized sessions with no limit, got %d", len(all))
 	}
 }
 

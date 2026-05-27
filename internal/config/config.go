@@ -10,13 +10,10 @@ import (
 )
 
 type Config struct {
-	ScanPaths            []string `toml:"scan_paths"`
-	ScanOrphans          bool     `toml:"scan_orphans"`
-	HideSidechains       bool     `toml:"hide_sidechains"`
-	AutoSummarize        int      `toml:"auto_summarize"`
-	SummarizeConcurrency int      `toml:"summarize_concurrency"`
-	SummarizeModel       string   `toml:"summarize_model"`
-	SortBy               string   `toml:"sort_by"`
+	ScanPaths      []string `toml:"scan_paths"`
+	ScanOrphans    bool     `toml:"scan_orphans"`
+	HideSidechains bool     `toml:"hide_sidechains"`
+	SortBy         string   `toml:"sort_by"`
 }
 
 const defaultConfig = `# Directories to scan for Claude Code sessions.
@@ -28,15 +25,6 @@ scan_orphans = true
 
 # Hide sidechain (branched conversation) sessions.
 hide_sidechains = true
-
-# Number of sessions to auto-summarize on launch. 0 to disable.
-auto_summarize = 25
-
-# Maximum concurrent summarization calls.
-summarize_concurrency = 3
-
-# Model to use for summarization (passed to claude --model).
-summarize_model = "sonnet"
 
 # Default sort order: "modified", "created", "messages", "project".
 sort_by = "modified"
@@ -107,29 +95,9 @@ func Load() (Config, bool, error) {
 	}
 
 	// Apply defaults for zero values
-	if cfg.AutoSummarize == 0 && !cfg.hasExplicitZero(path, "auto_summarize") {
-		cfg.AutoSummarize = 25
-	}
-	if cfg.SummarizeConcurrency == 0 {
-		cfg.SummarizeConcurrency = 3
-	}
-	if cfg.SummarizeModel == "" {
-		cfg.SummarizeModel = "sonnet"
-	}
 	if cfg.SortBy == "" {
 		cfg.SortBy = "modified"
 	}
 
 	return cfg, false, nil
-}
-
-// hasExplicitZero checks if a key is explicitly set in the TOML file.
-// This distinguishes between "not set" (use default) and "set to 0" (disable).
-func (c Config) hasExplicitZero(path, key string) bool {
-	var raw map[string]any
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
-		return false
-	}
-	_, exists := raw[key]
-	return exists
 }

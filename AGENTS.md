@@ -20,7 +20,7 @@ Disk scan → SQLite cache → TUI
 ```
 
 1. **Scanner** (`internal/scanner/`) reads `~/.claude/projects/*/sessions-index.json` and orphan `.jsonl` files to discover sessions.
-2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). AI-generated titles/summaries are preserved across upserts via `COALESCE`.
+2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). The `title`/`summary` columns are preserved across upserts via `COALESCE` (nothing populates them today — they're a slot for a future summarizer).
 3. **TUI** (`internal/tui/`) renders everything using Bubbletea's Elm architecture (Model → Update → View).
 
 ### TUI Model Composition
@@ -33,7 +33,7 @@ Disk scan → SQLite cache → TUI
 
 ### Concurrency
 
-Background summarization uses a worker pool: `summaryCh` channel → N goroutines calling `claude --print` → results arrive as `summarizeResultMsg`. Active session detection polls `/proc` every 15 seconds via `activeTickMsg`.
+Active session detection polls `/proc` every 15 seconds via `activeTickMsg`.
 
 ### Styling
 

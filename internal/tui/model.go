@@ -15,9 +15,7 @@ import (
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
-	"github.com/achton/cc360/internal/summarizer"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,31 +32,15 @@ type Model struct {
 	filter          filterInput
 	picker          projectPicker
 	projectFilter   map[string]bool // if non-empty, only show sessions from these projects
-	spinner         spinner.Model
 	tableInit       bool
 	keys            keyMap
 	width           int
 	height          int
 	statusMsg       string
-
-	// Background summarization state
-	summarizing   bool              // true while any summarization is in-flight
-	summaryDone   int               // completed count
-	summaryTotal  int               // total queued
-	summaryFailed int               // failed count
-	summaryCh     <-chan db.Session // channel for auto-summarize workers
 }
 
 type execFinishedMsg struct{ err error }
 
-type summarizeResultMsg struct {
-	sessionID string
-	title     string
-	summary   string
-	err       error
-}
-
-type autoSummarizeMsg struct{}
 type activeTickMsg struct{}
 
 type reloadResultMsg struct {
@@ -78,8 +60,6 @@ func activeTickCmd() tea.Cmd {
 
 // New creates the initial TUI model.
 func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeIDs map[string]bool) Model {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
 	return Model{
 		db:              database,
 		cfg:             cfg,
@@ -87,7 +67,6 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 		sessions:        sessions,
 		scannerSessions: scannerSessions,
 		activeIDs:       activeIDs,
-		spinner:         s,
 		detail:          detailPane{visible: true},
 		filter:          newFilterInput(),
 		keys:            newKeyMap(),
@@ -96,14 +75,7 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 }
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{activeTickCmd()}
-
-	// Trigger auto-summarize via message so it runs in Update (pointer receiver)
-	if m.cfg.AutoSummarize > 0 {
-		cmds = append(cmds, func() tea.Msg { return autoSummarizeMsg{} })
-	}
-
-	return tea.Batch(cmds...)
+	return activeTickCmd()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -163,9 +135,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.table.setHeight(m.tableHeight())
 			return m, nil
 
-		case key.Matches(msg, m.keys.Summarize):
-			return m, m.startSingleSummarize()
-
 		case key.Matches(msg, m.keys.Resume):
 			return m, m.resumeSession()
 
@@ -192,19 +161,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.clearFilters()
 			return m, nil
 		}
-
-	case spinner.TickMsg:
-		if m.summarizing {
-			var cmd tea.Cmd
-			m.spinner, cmd = m.spinner.Update(msg)
-			return m, cmd
-		}
-
-	case summarizeResultMsg:
-		return m, m.handleSummarizeResult(msg)
-
-	case autoSummarizeMsg:
-		return m, m.startAutoSummarize()
 
 	case reloadResultMsg:
 		if msg.err != nil {
@@ -423,9 +379,6 @@ func (m Model) View() string {
 	}
 
 	statusText := m.statusMsg
-	if m.summarizing {
-		statusText = m.spinner.View() + " " + m.statusMsg
-	}
 	// Truncate to prevent wrapping (padding takes 2 chars of horizontal space)
 	if maxW := m.width - 2; maxW > 0 {
 		statusText = ansi.Truncate(statusText, maxW, "…")
@@ -461,7 +414,6 @@ func (m Model) renderHelp() string {
 		{"tab", "detail"},
 		{"/", "filter"},
 		{"p", "projects"},
-		{"s", "summarize"},
 		{"c", "copy cmd"},
 		{"r", "reload"},
 		{"q", "quit"},
@@ -503,171 +455,6 @@ func (m *Model) selectedSession() *db.Session {
 
 func (m *Model) isActive(s *db.Session) bool {
 	return s != nil && m.activeIDs[s.SessionID]
-}
-
-// startAutoSummarize queues unsummarized sessions for background processing.
-func (m *Model) startAutoSummarize() tea.Cmd {
-	if m.db == nil {
-		return nil
-	}
-	unsummarized, err := m.db.Unsummarized(m.cfg.AutoSummarize)
-	if err != nil || len(unsummarized) == 0 {
-		return nil
-	}
-
-	m.summarizing = true
-	m.summaryDone = 0
-	m.summaryFailed = 0
-	m.summaryTotal = len(unsummarized)
-	m.statusMsg = fmt.Sprintf("Summarizing 0/%d...", m.summaryTotal)
-
-	// Launch concurrent workers
-	concurrency := m.cfg.SummarizeConcurrency
-	if concurrency <= 0 {
-		concurrency = 3
-	}
-
-	// Feed sessions through a channel
-	ch := make(chan db.Session, len(unsummarized))
-	for _, s := range unsummarized {
-		ch <- s
-	}
-	close(ch)
-	m.summaryCh = ch
-
-	model := m.cfg.SummarizeModel
-	var cmds []tea.Cmd
-	cmds = append(cmds, m.spinner.Tick)
-
-	for i := 0; i < concurrency && i < len(unsummarized); i++ {
-		cmds = append(cmds, summarizeWorker(ch, model))
-	}
-
-	return tea.Batch(cmds...)
-}
-
-// summarizeWorker reads from the channel and summarizes one session at a time.
-func summarizeWorker(ch <-chan db.Session, model string) tea.Cmd {
-	return func() tea.Msg {
-		s, ok := <-ch
-		if !ok {
-			return nil
-		}
-		title, summary, err := summarizer.Summarize(s, model)
-		return summarizeResultMsg{
-			sessionID: s.SessionID,
-			title:     title,
-			summary:   summary,
-			err:       err,
-		}
-	}
-}
-
-func (m *Model) startSingleSummarize() tea.Cmd {
-	s := m.selectedSession()
-	if s == nil {
-		m.statusMsg = "No session selected"
-		return nil
-	}
-	if s.JSONLPath == "" {
-		m.statusMsg = "Cannot summarize: no JSONL file for this session"
-		return nil
-	}
-	if _, err := os.Stat(s.JSONLPath); err != nil {
-		m.statusMsg = "Cannot summarize: JSONL file no longer exists"
-		return nil
-	}
-	if s.Title != "" && !s.SummarizedAt.IsZero() && !s.Modified.After(s.SummarizedAt) {
-		m.statusMsg = "Already summarized (not modified since)"
-		return nil
-	}
-	if m.activeIDs[s.SessionID] {
-		m.statusMsg = "Cannot summarize: session is active (data not flushed to disk yet)"
-		return nil
-	}
-
-	if !m.summarizing {
-		m.summarizing = true
-		m.summaryDone = 0
-		m.summaryFailed = 0
-		m.summaryTotal = 1
-	} else {
-		m.summaryTotal++
-	}
-	m.statusMsg = fmt.Sprintf("Summarizing %d/%d...", m.summaryDone, m.summaryTotal)
-
-	session := *s
-	model := m.cfg.SummarizeModel
-	return tea.Batch(
-		m.spinner.Tick,
-		func() tea.Msg {
-			title, summary, err := summarizer.Summarize(session, model)
-			return summarizeResultMsg{
-				sessionID: session.SessionID,
-				title:     title,
-				summary:   summary,
-				err:       err,
-			}
-		},
-	)
-}
-
-func (m *Model) handleSummarizeResult(msg summarizeResultMsg) tea.Cmd {
-	m.summaryDone++
-
-	if msg.err != nil {
-		m.summaryFailed++
-	} else {
-		// Update DB (nil in demo mode)
-		dbOK := true
-		if m.db != nil {
-			if err := m.db.SetSummary(msg.sessionID, msg.title, msg.summary); err != nil {
-				dbOK = false
-				m.summaryFailed++
-			}
-		}
-		if dbOK {
-			// Update in-memory sessions (both allSessions and filtered sessions)
-			for i := range m.allSessions {
-				if m.allSessions[i].SessionID == msg.sessionID {
-					m.allSessions[i].Title = msg.title
-					m.allSessions[i].Summary = msg.summary
-					break
-				}
-			}
-			for i := range m.sessions {
-				if m.sessions[i].SessionID == msg.sessionID {
-					m.sessions[i].Title = msg.title
-					m.sessions[i].Summary = msg.summary
-					break
-				}
-			}
-			m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeIDs)
-		}
-	}
-
-	if m.summaryDone >= m.summaryTotal {
-		m.summarizing = false
-		m.summaryCh = nil
-		succeeded := m.summaryTotal - m.summaryFailed
-		switch {
-		case m.summaryFailed > 0 && succeeded == 0:
-			m.statusMsg = fmt.Sprintf("Summarization failed: %v", msg.err)
-		case m.summaryFailed > 0:
-			m.statusMsg = fmt.Sprintf("Summarized %d sessions (%d failed)", succeeded, m.summaryFailed)
-		default:
-			m.statusMsg = fmt.Sprintf("Summarized %d sessions", succeeded)
-		}
-		return nil
-	}
-
-	m.statusMsg = fmt.Sprintf("Summarizing %d/%d...", m.summaryDone, m.summaryTotal)
-
-	// Re-spawn worker to pick up next item from channel
-	if m.summaryCh != nil {
-		return summarizeWorker(m.summaryCh, m.cfg.SummarizeModel)
-	}
-	return nil
 }
 
 func (m *Model) reloadCmd() tea.Cmd {

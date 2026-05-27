@@ -53,9 +53,6 @@ Config file: `~/.config/cc360/config.toml`
 | `scan_orphans` | `true` | Include sessions found in `.jsonl` files that aren't listed in any session index. |
 | `hide_sidechains` | `true` | Hide sidechain (branched conversation) sessions. |
 | `sort_by` | `"modified"` | Default sort order. Options: `modified`, `created`, `messages`, `project`. |
-| `auto_summarize` | `25` | Number of unsummarized sessions to auto-summarize on launch. Set to `0` to disable. |
-| `summarize_concurrency` | `3` | Max concurrent summarization calls. |
-| `summarize_model` | `"sonnet"` | Model for AI summarization via `claude --print`. |
 
 ## Keybindings
 
@@ -68,7 +65,6 @@ Config file: `~/.config/cc360/config.toml`
 | `Tab` | Toggle detail pane (open by default) |
 | `/` | Open text filter (live search across all fields) |
 | `p` | Open project picker (tree view with multi-select) |
-| `s` | Summarize selected session |
 | `c` | Copy resume command to clipboard (via OSC 52) |
 | `r` | Reload config and re-scan all sessions |
 | `Esc` | Clear text filter |
@@ -86,12 +82,6 @@ Filters stack: pick projects with `p`, then refine with `/`.
 
 CC360 detects currently running Claude Code sessions by scanning `/proc/*/cmdline` for claude processes. Active sessions are marked with a green `●` next to the date and cannot be resumed (to prevent conflicts). Detection refreshes every 15 seconds.
 
-## AI summarization
-
-CC360 can generate short titles and summaries for sessions by calling `claude --print`. On launch, it auto-summarizes the newest unsummarized sessions (configurable via `auto_summarize`). Press `s` to manually summarize the selected session. Sessions that haven't been modified since their last summarization are skipped.
-
-Summaries are stored in the SQLite cache and persist across runs.
-
 ## How it works
 
 ### Data sources
@@ -105,7 +95,7 @@ The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` → `-h
 
 ### Caching
 
-Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, CC360 scans the disk and upserts into the cache. The cache preserves AI-generated titles and summaries across runs.
+Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, CC360 scans the disk and upserts into the cache.
 
 ### Session filtering
 
@@ -118,9 +108,8 @@ CC360 automatically filters out non-interactive sessions:
 
 The "Project summary" column shows (in priority order):
 
-1. AI-generated title + summary (combined with " — ")
-2. Claude's own session summary from the index file
-3. The first user message as a fallback
+1. Claude's own session summary from the index file
+2. The first user message as a fallback
 
 The "Folder" column shows the project directory relative to the scan path (e.g. `Code/myproject`, `Code/lib/mylib`). Worktree sessions show a `⌥` indicator next to the folder name.
 
@@ -136,7 +125,6 @@ internal/
     scanner.go                  Dual-source session discovery (index + orphan JSONL)
     active.go                   Active session detection via /proc
   db/db.go                      SQLite cache (pure Go, no CGo)
-  summarizer/summarizer.go      AI summarization via claude --print
   tui/
     model.go                    Bubbletea model, update loop, actions
     table.go                    Custom table rendering (columns, rows, scrolling)

@@ -71,8 +71,7 @@ func TestLoadValidConfig(t *testing.T) {
 	os.MkdirAll(cfgDir, 0o755)
 	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(`
 scan_paths = ["/tmp/test"]
-auto_summarize = 10
-summarize_model = "haiku"
+sort_by = "created"
 `), 0o644)
 
 	cfg, shouldExit, err := Load()
@@ -85,22 +84,12 @@ summarize_model = "haiku"
 	if len(cfg.ScanPaths) != 1 || cfg.ScanPaths[0] != "/tmp/test" {
 		t.Errorf("unexpected scan_paths: %v", cfg.ScanPaths)
 	}
-	if cfg.AutoSummarize != 10 {
-		t.Errorf("auto_summarize = %d, want 10", cfg.AutoSummarize)
-	}
-	if cfg.SummarizeModel != "haiku" {
-		t.Errorf("summarize_model = %q, want haiku", cfg.SummarizeModel)
-	}
-	// Defaults
-	if cfg.SummarizeConcurrency != 3 {
-		t.Errorf("summarize_concurrency = %d, want 3", cfg.SummarizeConcurrency)
-	}
-	if cfg.SortBy != "modified" {
-		t.Errorf("sort_by = %q, want modified", cfg.SortBy)
+	if cfg.SortBy != "created" {
+		t.Errorf("sort_by = %q, want created", cfg.SortBy)
 	}
 }
 
-func TestLoadAutoSummarizeZero(t *testing.T) {
+func TestLoadSortByDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
@@ -108,7 +97,6 @@ func TestLoadAutoSummarizeZero(t *testing.T) {
 	os.MkdirAll(cfgDir, 0o755)
 	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(`
 scan_paths = ["/tmp/test"]
-auto_summarize = 0
 `), 0o644)
 
 	cfg, shouldExit, err := Load()
@@ -118,7 +106,7 @@ auto_summarize = 0
 	if shouldExit {
 		t.Error("expected shouldExit=false")
 	}
-	if cfg.AutoSummarize != 0 {
-		t.Errorf("auto_summarize = %d, want 0 (explicitly disabled)", cfg.AutoSummarize)
+	if cfg.SortBy != "modified" {
+		t.Errorf("sort_by = %q, want modified (default)", cfg.SortBy)
 	}
 }
