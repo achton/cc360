@@ -3,20 +3,20 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	PageUp    key.Binding
-	PageDown  key.Binding
-	Top       key.Binding
-	Bottom    key.Binding
-	Detail    key.Binding
-	Resume    key.Binding
-	Copy      key.Binding
-	Filter    key.Binding
-	Picker    key.Binding
-	Reload    key.Binding
-	Escape    key.Binding
-	Quit      key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	PageUp   key.Binding
+	PageDown key.Binding
+	Top      key.Binding
+	Bottom   key.Binding
+	Detail   key.Binding
+	Resume   key.Binding
+	Copy     key.Binding
+	Filter   key.Binding
+	Picker   key.Binding
+	Reload   key.Binding
+	Escape   key.Binding
+	Quit     key.Binding
 }
 
 func newKeyMap() keyMap {
