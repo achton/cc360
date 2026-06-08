@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260305213658-fe36e8c10185
-	modernc.org/sqlite v1.50.1
+	modernc.org/sqlite v1.52.0
 )
 
 require (
