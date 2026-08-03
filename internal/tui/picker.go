@@ -66,17 +66,36 @@ func childLabel(projectName, groupPrefix string) string {
 	return strings.TrimPrefix(simplified, groupPrefix+"/")
 }
 
+// lessNode orders tree nodes by label, breaking ties on the project name. A
+// project and its worktree simplify to the same label, so label alone is not a
+// total order and the sort would leave them in whatever order they were built.
+func lessNode(a, b *treeNode) bool {
+	if a.label != b.label {
+		return a.label < b.label
+	}
+	return a.projectName < b.projectName
+}
+
 func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool) {
 	counts := make(map[string]int)
 	for _, s := range sessions {
 		counts[s.ProjectName]++
 	}
 
+	// Walk the projects in a fixed order; ranging the map directly would build
+	// a different tree on every call.
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	// Group by first path component
 	groups := make(map[string]*treeNode)
 	var standalones []*treeNode
 
-	for name, count := range counts {
+	for _, name := range names {
+		count := counts[name]
 		isWorktree := strings.Contains(name, "/.claude/worktrees/")
 
 		parts := strings.SplitN(name, "/", 2)
@@ -136,7 +155,7 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 	// Sort children and compute group counts
 	for _, g := range groups {
 		sort.Slice(g.children, func(i, j int) bool {
-			return g.children[i].label < g.children[j].label
+			return lessNode(g.children[i], g.children[j])
 		})
 		total := 0
 		for _, c := range g.children {
@@ -165,7 +184,7 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 		p.roots = append(p.roots, groups[k])
 	}
 	sort.Slice(standalones, func(i, j int) bool {
-		return standalones[i].label < standalones[j].label
+		return lessNode(standalones[i], standalones[j])
 	})
 	p.roots = append(p.roots, standalones...)
 
