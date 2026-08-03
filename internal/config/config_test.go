@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+func writeConfig(t *testing.T, dir, body string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, "cc360")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
 func TestExpandHome(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	tests := []struct {
@@ -26,9 +37,7 @@ func TestExpandHome(t *testing.T) {
 
 func TestLoadCreatesDefault(t *testing.T) {
 	dir := t.TempDir()
-	orig := os.Getenv("XDG_CONFIG_HOME")
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	defer os.Setenv("XDG_CONFIG_HOME", orig)
 
 	_, shouldExit, err := Load()
 	if err != nil {
@@ -49,10 +58,7 @@ func TestLoadEmptyScanPaths(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	// Create config with empty scan_paths
-	cfgDir := filepath.Join(dir, "cc360")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(`scan_paths = []`), 0o644)
+	writeConfig(t, dir, `scan_paths = []`)
 
 	_, shouldExit, err := Load()
 	if err != nil {
@@ -67,12 +73,10 @@ func TestLoadValidConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	cfgDir := filepath.Join(dir, "cc360")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(`
+	writeConfig(t, dir, `
 scan_paths = ["/tmp/test"]
 sort_by = "created"
-`), 0o644)
+`)
 
 	cfg, shouldExit, err := Load()
 	if err != nil {
@@ -93,11 +97,9 @@ func TestLoadSortByDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	cfgDir := filepath.Join(dir, "cc360")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(`
+	writeConfig(t, dir, `
 scan_paths = ["/tmp/test"]
-`), 0o644)
+`)
 
 	cfg, shouldExit, err := Load()
 	if err != nil {

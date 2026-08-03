@@ -19,6 +19,13 @@ func testDB(t *testing.T) *DB {
 	return db
 }
 
+func mustUpsert(t *testing.T, db *DB, sessions []scanner.Session) {
+	t.Helper()
+	if err := db.Upsert(sessions); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+}
+
 func TestUpsertAndQuery(t *testing.T) {
 	db := testDB(t)
 
@@ -73,7 +80,7 @@ func TestUpsertOverwritesBranch(t *testing.T) {
 		ClaudeDir:   "/test",
 		GitBranch:   "feature-old",
 	}}
-	db.Upsert(s1)
+	mustUpsert(t, db, s1)
 
 	s2 := []scanner.Session{{
 		SessionID:   "abc-123",
@@ -81,7 +88,7 @@ func TestUpsertOverwritesBranch(t *testing.T) {
 		ClaudeDir:   "/test",
 		GitBranch:   "feature-new",
 	}}
-	db.Upsert(s2)
+	mustUpsert(t, db, s2)
 
 	all, _ := db.AllSessions("modified", true)
 	if all[0].GitBranch != "feature-new" {
@@ -97,7 +104,7 @@ func TestUpsertPreservesSummary(t *testing.T) {
 		ProjectName: "test",
 		ClaudeDir:   "/test",
 	}}
-	db.Upsert(s)
+	mustUpsert(t, db, s)
 	// Simulate a stored title/summary (e.g. from a future summarizer).
 	if _, err := db.conn.Exec(
 		`UPDATE sessions SET title = ?, summary = ? WHERE session_id = ?`,
@@ -107,7 +114,7 @@ func TestUpsertPreservesSummary(t *testing.T) {
 	}
 
 	// Re-upsert
-	db.Upsert(s)
+	mustUpsert(t, db, s)
 
 	all, _ := db.AllSessions("modified", true)
 	if all[0].Title != "My Title" {
@@ -121,7 +128,7 @@ func TestUpsertPreservesSummary(t *testing.T) {
 func TestSearch(t *testing.T) {
 	db := testDB(t)
 
-	db.Upsert([]scanner.Session{
+	mustUpsert(t, db, []scanner.Session{
 		{SessionID: "a", ProjectName: "myproject", ClaudeDir: "/test", FirstPrompt: "fix the navbar"},
 		{SessionID: "b", ProjectName: "other", ClaudeDir: "/test", FirstPrompt: "add login page"},
 	})
@@ -144,7 +151,7 @@ func TestAllSessionsSQLInjection(t *testing.T) {
 	db := testDB(t)
 
 	// Insert some test data
-	db.Upsert([]scanner.Session{
+	mustUpsert(t, db, []scanner.Session{
 		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test", FirstPrompt: "hello"},
 		{SessionID: "b", ProjectName: "test2", ClaudeDir: "/test2", FirstPrompt: "world"},
 	})
@@ -172,7 +179,7 @@ func TestAllSessionsSQLInjection(t *testing.T) {
 func TestPruneUnseen(t *testing.T) {
 	db := testDB(t)
 
-	db.Upsert([]scanner.Session{
+	mustUpsert(t, db, []scanner.Session{
 		{SessionID: "a", ProjectName: "test", ClaudeDir: "/test"},
 		{SessionID: "b", ProjectName: "test", ClaudeDir: "/test"},
 		{SessionID: "c", ProjectName: "test", ClaudeDir: "/test"},

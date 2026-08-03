@@ -30,3 +30,9 @@ jobs:
 
       - name: Format check
         run: make fmt
+
+      # Pinned: needs a golangci-lint built with Go >= the go.mod directive.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
