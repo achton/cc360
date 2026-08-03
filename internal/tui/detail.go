@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const detailHeight = 8 // total lines including border

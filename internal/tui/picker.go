@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/db"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // treeNode represents a node in the project tree.
@@ -453,5 +453,7 @@ func (p *projectPicker) view(width, height int) string {
 		b.WriteByte('\n')
 	}
 
-	return pickerBorderStyle.Width(innerWidth + 2).Render(b.String())
+	// lipgloss v2 counts the border inside Width, so the box lands exactly on
+	// the requested width. Under v1 this overflowed by the border size.
+	return pickerBorderStyle.Width(width).Render(b.String())
 }

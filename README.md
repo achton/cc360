@@ -171,9 +171,9 @@ internal/
 ## Tech stack
 
 - [Go](https://go.dev) 1.26+
-- [Bubbletea](https://github.com/charmbracelet/bubbletea): Elm-architecture TUI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss): terminal styling
-- [Bubbles](https://github.com/charmbracelet/bubbles): spinner and text input components
+- [Bubble Tea v2](https://charm.land/bubbletea): Elm-architecture TUI framework
+- [Lip Gloss v2](https://charm.land/lipgloss): terminal styling
+- [Bubbles v2](https://charm.land/bubbles): text input component
 - [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite): pure Go SQLite, no CGo
 - [BurntSushi/toml](https://github.com/BurntSushi/toml): config parsing
 
