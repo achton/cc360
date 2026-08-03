@@ -481,7 +481,8 @@ func (m *Model) reloadCmd() tea.Cmd {
 		for i, s := range scanned {
 			ids[i] = s.SessionID
 		}
-		database.PruneUnseen(ids)
+		// Stale rows are harmless; a real DB fault surfaces on the query below.
+		_, _ = database.PruneUnseen(ids)
 
 		all, err := database.AllSessions(cfg.SortBy, true)
 		if err != nil {

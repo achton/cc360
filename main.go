@@ -86,7 +86,9 @@ func main() {
 	for i, s := range sessions {
 		scannedIDs[i] = s.SessionID
 	}
-	database.PruneUnseen(scannedIDs)
+	if _, err := database.PruneUnseen(scannedIDs); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not prune stale sessions: %v\n", err)
+	}
 
 	all, err := database.AllSessions(cfg.SortBy, true)
 	if err != nil {
