@@ -47,7 +47,10 @@ The table's `setHeight()` reserves 4 lines of chrome (top separator + column hea
 
 Use conventional commit prefixes for changelog generation via GoReleaser:
 - `feat:` / `fix:` / `perf:` → appear in release changelog
-- `docs:` / `test:` / `ci:` / `chore:` → excluded from changelog
+- `docs:` / `test:` / `ci:` / `chore:` / `style:` → excluded from changelog
+
+Scopes are excluded too (`chore(deps):`), but a breaking-change marker keeps the
+commit in the changelog (`chore!:`).
 
 ## Key Conventions
 

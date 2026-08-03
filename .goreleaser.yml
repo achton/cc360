@@ -51,10 +51,8 @@ changelog:
       order: 999
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - "^chore:"
+      # Scoped types too (chore(deps):). Breaking changes (chore!:) stay in.
+      - '^(docs|test|ci|chore|style)(\(.+\))?:'
       - "^Merge "
 
 brews:
