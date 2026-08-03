@@ -19,8 +19,8 @@ CC360 is a Go/Bubbletea TUI for browsing and resuming Claude Code sessions. Data
 Disk scan → SQLite cache → TUI
 ```
 
-1. **Scanner** (`internal/scanner/`) reads `~/.claude/projects/*/sessions-index.json` and orphan `.jsonl` files to discover sessions.
-2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). The `title`/`summary` columns are preserved across upserts via `COALESCE` (nothing populates them today — they're a slot for a future summarizer).
+1. **Scanner** (`internal/scanner/`) reads `~/.claude/projects/*/sessions-index.json` and orphan `.jsonl` files to discover sessions. Claude Code stopped writing `sessions-index.json` in February 2026, so in practice every current session arrives via the orphan JSONL path; the index only supplies older entries that predate that.
+2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). `title` holds the `ai-title` harvested from the transcript, preserved when a later scan finds none. Note it does not survive Claude Code's 30-day transcript cleanup: once a session leaves the scan entirely, `PruneUnseen` removes the row.
 3. **TUI** (`internal/tui/`) renders everything using Bubbletea's Elm architecture (Model → Update → View).
 
 ### TUI Model Composition

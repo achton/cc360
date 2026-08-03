@@ -191,3 +191,66 @@ func TestParseTime(t *testing.T) {
 		t.Error("expected non-zero time for nano format")
 	}
 }
+
+// writeJSONL builds a transcript from the given lines.
+func writeJSONL(t *testing.T, lines []string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("writing JSONL: %v", err)
+	}
+	return path
+}
+
+func TestParseOrphanJSONLAITitle(t *testing.T) {
+	head := `{"type":"system","sessionId":"s1","cwd":"/home/user/p","gitBranch":"main","timestamp":"2026-01-01T00:00:00Z"}`
+	title := `{"type":"ai-title","aiTitle":"Fix the flaky test","sessionId":"s1"}`
+	filler := `{"type":"assistant","message":{"role":"assistant","content":"x"},"timestamp":"2026-01-01T00:00:01Z"}`
+
+	tests := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"early", []string{head, title, filler}, "Fix the flaky test"},
+		{"absent", []string{head, filler}, ""},
+		{"empty value", []string{head, `{"type":"ai-title","aiTitle":""}`, filler}, ""},
+	}
+
+	// Past the 15-line metadata pass, so the full-file loop has to catch it.
+	late := []string{head}
+	for i := 0; i < 25; i++ {
+		late = append(late, filler)
+	}
+	late = append(late, title)
+	tests = append(tests, struct {
+		name  string
+		lines []string
+		want  string
+	}{"after line 15", late, "Fix the flaky test"})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := parseOrphanJSONL(writeJSONL(t, tt.lines), []string{"/home/user"})
+			if s == nil {
+				t.Fatal("parseOrphanJSONL returned nil")
+			}
+			if s.Title != tt.want {
+				t.Errorf("Title = %q, want %q", s.Title, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseOrphanJSONLTitleTruncated(t *testing.T) {
+	head := `{"type":"system","sessionId":"s1","cwd":"/home/user/p","timestamp":"2026-01-01T00:00:00Z"}`
+	long := fmt.Sprintf(`{"type":"ai-title","aiTitle":"%s"}`, strings.Repeat("t", 5000))
+
+	s := parseOrphanJSONL(writeJSONL(t, []string{head, long}), []string{"/home/user"})
+	if s == nil {
+		t.Fatal("parseOrphanJSONL returned nil")
+	}
+	if len(s.Title) > maxTitleLen {
+		t.Errorf("Title length = %d, want <= %d", len(s.Title), maxTitleLen)
+	}
+}

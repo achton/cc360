@@ -126,15 +126,18 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 	stmt, err := tx.Prepare(`
 		INSERT INTO sessions
 			(session_id, project_name, project_path, claude_dir,
-			 first_prompt, existing_summary, message_count, created, modified,
+			 first_prompt, existing_summary, title, message_count, created, modified,
 			 git_branch, is_sidechain, jsonl_path, last_scanned)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
 			claude_dir = excluded.claude_dir,
 			first_prompt = COALESCE(excluded.first_prompt, sessions.first_prompt),
 			existing_summary = COALESCE(excluded.existing_summary, sessions.existing_summary),
+			-- Keep an already-harvested title when a later scan finds none,
+			-- e.g. the session now resolves via the stale index instead.
+			title = COALESCE(NULLIF(excluded.title, ''), sessions.title),
 			message_count = COALESCE(excluded.message_count, sessions.message_count),
 			created = COALESCE(excluded.created, sessions.created),
 			modified = COALESCE(excluded.modified, sessions.modified),
@@ -151,7 +154,7 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 	for _, s := range sessions {
 		_, err := stmt.Exec(
 			s.SessionID, s.ProjectName, s.ProjectPath, s.ClaudeDir,
-			s.FirstPrompt, s.ExistingSummary, s.MessageCount,
+			s.FirstPrompt, s.ExistingSummary, s.Title, s.MessageCount,
 			formatTime(s.Created), formatTime(s.Modified),
 			s.GitBranch, boolToInt(s.IsSidechain), s.JSONLPath, now,
 		)

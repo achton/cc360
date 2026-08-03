@@ -175,26 +175,54 @@ func TestUpsertOverwritesBranch(t *testing.T) {
 	}
 }
 
-func TestUpsertPreservesTitle(t *testing.T) {
+func TestUpsertStoresTitle(t *testing.T) {
 	db := testDB(t)
 
-	s := []scanner.Session{{
-		SessionID:   "abc-123",
-		ProjectName: "test",
-		ClaudeDir:   "/test",
-	}}
-	mustUpsert(t, db, s)
-	if _, err := db.conn.Exec(
-		`UPDATE sessions SET title = ? WHERE session_id = ?`, "My Title", "abc-123",
-	); err != nil {
-		t.Fatalf("seed title: %v", err)
-	}
-
-	mustUpsert(t, db, s)
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test",
+		Title: "Harvested title",
+	}})
 
 	all, _ := db.AllSessions("modified", true)
-	if all[0].Title != "My Title" {
-		t.Errorf("title = %q, want My Title", all[0].Title)
+	if all[0].Title != "Harvested title" {
+		t.Fatalf("title = %q, want Harvested title", all[0].Title)
+	}
+}
+
+// A rescan after Claude Code deleted the transcript yields no ai-title. The
+// previously harvested one must survive.
+func TestUpsertEmptyTitleDoesNotClobber(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test",
+		Title: "Harvested title",
+	}})
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test",
+		Title: "",
+	}})
+
+	all, _ := db.AllSessions("modified", true)
+	if all[0].Title != "Harvested title" {
+		t.Errorf("title = %q, want it preserved as Harvested title", all[0].Title)
+	}
+}
+
+// A newer title replaces the stored one, so /rename is picked up on rescan.
+func TestUpsertNewTitleReplaces(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test", Title: "Old",
+	}})
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test", Title: "New",
+	}})
+
+	all, _ := db.AllSessions("modified", true)
+	if all[0].Title != "New" {
+		t.Errorf("title = %q, want New", all[0].Title)
 	}
 }
 

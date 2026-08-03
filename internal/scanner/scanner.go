@@ -19,6 +19,7 @@ type Session struct {
 	ClaudeDir       string
 	FirstPrompt     string
 	ExistingSummary string
+	Title           string
 	MessageCount    int
 	Created         time.Time
 	Modified        time.Time
@@ -53,6 +54,7 @@ type jsonlEntry struct {
 	GitBranch   string          `json:"gitBranch"`
 	IsSidechain bool            `json:"isSidechain"`
 	Timestamp   string          `json:"timestamp"`
+	AITitle     string          `json:"aiTitle"`
 	Message     json.RawMessage `json:"message"`
 }
 
@@ -163,6 +165,7 @@ const (
 	maxCwdLen         = 4096
 	maxGitBranchLen   = 256
 	maxFirstPromptLen = 1000
+	maxTitleLen       = 200
 )
 
 // truncateField truncates a string to maxLen if it exceeds the limit.
@@ -188,6 +191,7 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		firstTimestamp string
 		lastTimestamp  string
 		firstPrompt    string
+		aiTitle        string
 		isSidechain    bool
 		msgCount       int
 	)
@@ -215,6 +219,9 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		}
 		if entry.IsSidechain {
 			isSidechain = true
+		}
+		if entry.Type == "ai-title" && aiTitle == "" {
+			aiTitle = entry.AITitle
 		}
 		if entry.Timestamp != "" {
 			if firstTimestamp == "" {
@@ -248,6 +255,10 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		if entry.Timestamp != "" {
 			lastTimestamp = entry.Timestamp
 		}
+		// Usually within the first 15 lines, but not guaranteed.
+		if entry.Type == "ai-title" && aiTitle == "" {
+			aiTitle = entry.AITitle
+		}
 		if len(entry.Message) > 0 {
 			var mc messageContent
 			if json.Unmarshal(entry.Message, &mc) == nil {
@@ -267,6 +278,7 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	cwd = truncateField(cwd, maxCwdLen)
 	gitBranch = truncateField(gitBranch, maxGitBranchLen)
 	firstPrompt = truncateField(firstPrompt, maxFirstPromptLen)
+	aiTitle = truncateField(aiTitle, maxTitleLen)
 
 	return &Session{
 		SessionID:    sessionID,
@@ -274,6 +286,7 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		ProjectPath:  cwd,
 		ClaudeDir:    filepath.Dir(path),
 		FirstPrompt:  firstPrompt,
+		Title:        aiTitle,
 		MessageCount: msgCount,
 		Created:      parseTime(firstTimestamp),
 		Modified:     parseTime(lastTimestamp),

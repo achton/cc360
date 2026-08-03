@@ -111,8 +111,8 @@ CC360 detects currently running Claude Code sessions by inspecting running `clau
 
 CC360 reads Claude Code's own data files:
 
-- **Session index**: `~/.claude/projects/{encoded-path}/sessions-index.json` contains metadata for each session (ID, timestamps, branch, message count, summary).
-- **Orphan JSONL files**: Some sessions exist only as `.jsonl` transcript files without an index entry. CC360 parses the first 15 lines to extract metadata (cwd, branch, first prompt), then scans the full file for the last timestamp and message count.
+- **JSONL transcripts**: `~/.claude/projects/{encoded-path}/{session-id}.jsonl`. CC360 parses the first 15 lines for metadata (cwd, branch, first prompt), then scans the full file for the last timestamp, message count, and the AI-generated session title. This is where all current sessions come from.
+- **Session index**: `~/.claude/projects/{encoded-path}/sessions-index.json`. Claude Code stopped maintaining this in February 2026; CC360 still reads it so older sessions keep their metadata.
 
 The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` → `-home-user-Code-myproject`).
 
@@ -129,10 +129,13 @@ CC360 automatically filters out non-interactive sessions:
 
 ### Display
 
-The "Project summary" column shows (in priority order):
+The "Project summary" column shows (in priority order), matching what Claude Code's own
+`/resume` picker displays:
 
-1. Claude's own session summary from the index file
-2. The first user message as a fallback
+1. The AI-generated session title, written by Claude Code itself when a session starts
+2. Claude's session summary from the index file, for sessions predating February 2026
+3. The first user message
+4. The project name
 
 The "Folder" column shows the project directory relative to the scan path (e.g. `Code/myproject`, `Code/lib/mylib`). Worktree sessions show a `⌥` indicator next to the folder name.
 
