@@ -26,7 +26,7 @@ type Model struct {
 	allSessions     []db.Session // full unfiltered list
 	sessions        []db.Session // currently displayed (filtered)
 	scannerSessions []scanner.Session
-	activeIDs       map[string]bool
+	activeStates    map[string]scanner.ActiveState
 	table           sessionTable
 	detail          detailPane
 	filter          filterInput
@@ -59,14 +59,14 @@ func activeTickCmd() tea.Cmd {
 }
 
 // New creates the initial TUI model.
-func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeIDs map[string]bool) Model {
+func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeStates map[string]scanner.ActiveState) Model {
 	return Model{
 		db:              database,
 		cfg:             cfg,
 		allSessions:     sessions,
 		sessions:        sessions,
 		scannerSessions: scannerSessions,
-		activeIDs:       activeIDs,
+		activeStates:    activeStates,
 		detail:          detailPane{visible: true},
 		filter:          newFilterInput(),
 		keys:            newKeyMap(),
@@ -75,6 +75,9 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 }
 
 func (m Model) Init() tea.Cmd {
+	if !m.cfg.ShowActive {
+		return nil
+	}
 	return activeTickCmd()
 }
 
@@ -84,7 +87,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if !m.tableInit {
-			m.table = newSessionTable(m.sessions, m.width, m.tableHeight(), m.activeIDs)
+			m.table = newSessionTable(m.sessions, m.width, m.tableHeight(), m.activeStates)
 			m.tableInit = true
 		} else {
 			m.table.resize(m.sessions, m.width, m.tableHeight())
@@ -170,8 +173,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfg = msg.cfg
 		m.scannerSessions = msg.scanSess
 		m.allSessions = msg.sessions
-		m.activeIDs = scanner.ActiveSessionIDs(m.scannerSessions)
-		m.table.activeIDs = m.activeIDs
+		m.activeStates = m.pollActive()
+		m.table.activeStates = m.activeStates
 		// Clear filters and rebuild
 		m.filter.close()
 		m.projectFilter = nil
@@ -181,9 +184,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case activeTickMsg:
-		m.activeIDs = scanner.ActiveSessionIDs(m.scannerSessions)
-		m.table.activeIDs = m.activeIDs
-		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeIDs)
+		m.activeStates = m.pollActive()
+		m.table.activeStates = m.activeStates
+		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeStates)
 		return m, activeTickCmd()
 
 	case execFinishedMsg:
@@ -346,7 +349,7 @@ func (m *Model) updateStatusFromFilters() {
 }
 
 func (m *Model) rebuildTable() {
-	m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeIDs)
+	m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeStates)
 	m.table.SetCursor(0)
 	m.table.setHeight(m.tableHeight())
 }
@@ -375,7 +378,7 @@ func (m Model) View() string {
 	var detail string
 	if m.detail.visible {
 		s := m.selectedSession()
-		detail = "\n" + m.detail.view(s, m.width, m.isActive(s))
+		detail = "\n" + m.detail.view(s, m.width, m.activeState(s))
 	}
 
 	statusText := m.statusMsg
@@ -434,7 +437,7 @@ func (m Model) tableHeight() int {
 	h := m.height - 3
 	if m.detail.visible {
 		// detail pane rendered height includes border
-		h -= lipgloss.Height(m.detail.view(m.selectedSession(), m.width, false))
+		h -= lipgloss.Height(m.detail.view(m.selectedSession(), m.width, scanner.StateNone))
 	}
 	if m.filter.visible() {
 		h -= lipgloss.Height(m.filter.view(m.width))
@@ -453,8 +456,19 @@ func (m *Model) selectedSession() *db.Session {
 	return nil
 }
 
-func (m *Model) isActive(s *db.Session) bool {
-	return s != nil && m.activeIDs[s.SessionID]
+func (m *Model) activeState(s *db.Session) scanner.ActiveState {
+	if s == nil {
+		return scanner.StateNone
+	}
+	return m.activeStates[s.SessionID]
+}
+
+// pollActive queries running sessions unless the user turned the indicators off.
+func (m *Model) pollActive() map[string]scanner.ActiveState {
+	if !m.cfg.ShowActive {
+		return nil
+	}
+	return scanner.ActiveSessions()
 }
 
 func (m *Model) reloadCmd() tea.Cmd {
@@ -533,7 +547,7 @@ func (m *Model) resumeSession() tea.Cmd {
 		m.statusMsg = "No session selected"
 		return nil
 	}
-	if m.isActive(s) {
+	if m.activeState(s) != scanner.StateNone {
 		m.statusMsg = "Session is currently active"
 		return nil
 	}
@@ -612,7 +626,7 @@ func (m *Model) copyResumeCommand() {
 		m.statusMsg = "No session selected"
 		return
 	}
-	if m.isActive(s) {
+	if m.activeState(s) != scanner.StateNone {
 		m.statusMsg = "Session is currently active"
 		return
 	}

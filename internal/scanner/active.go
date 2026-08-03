@@ -1,71 +1,67 @@
 package scanner
 
-import "sort"
+import (
+	"context"
+	"encoding/json"
+	"os/exec"
+	"time"
+)
 
-// claudeProc describes a running `claude` process discovered by a
-// platform-specific backend (see active_linux.go / active_darwin.go).
-type claudeProc struct {
-	pid      int
-	resumeID string // session ID from --resume, empty for a fresh session
-	cwd      string // working directory, empty if unavailable
+// ActiveState describes what a running claude process is doing. The zero value
+// means the session is not running.
+type ActiveState int
+
+const (
+	StateNone ActiveState = iota
+	StateIdle
+	StateBusy
+)
+
+// agentEntry is the subset of `claude agents --json` we use.
+type agentEntry struct {
+	SessionID string `json:"sessionId"`
+	Status    string `json:"status"`
 }
 
-// ActiveSessionIDs returns session IDs currently in use by a running claude
-// process. Process discovery is platform-specific (claudeProcesses); the
-// matching logic is shared across platforms.
-func ActiveSessionIDs(sessions []Session) map[string]bool {
-	return matchActive(sessions, claudeProcesses())
+const activeLookupTimeout = 5 * time.Second
+
+// ActiveSessions maps the session IDs of running claude processes to their
+// state. It asks Claude Code directly via `claude agents --json`, which reports
+// the real session ID; inferring it from process arguments could only ever be a
+// guess for sessions that were not started with --resume.
+//
+// Any failure yields no results, so the indicators go quiet rather than the
+// table breaking.
+func ActiveSessions() map[string]ActiveState {
+	ctx, cancel := context.WithTimeout(context.Background(), activeLookupTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "claude", "agents", "--json").Output()
+	if err != nil {
+		return nil
+	}
+	return parseAgents(out)
 }
 
-// matchActive maps running claude processes to known session IDs. Resumed
-// sessions (--resume <id>) match exactly; fresh sessions are matched by CWD to
-// the most recently modified session in that directory, with newer processes
-// (higher PID) taking precedence.
-func matchActive(sessions []Session, procs []claudeProc) map[string]bool {
-	active := make(map[string]bool)
-
-	// Known session IDs for fast lookup.
-	knownIDs := make(map[string]bool, len(sessions))
-	for _, s := range sessions {
-		knownIDs[s.SessionID] = true
+func parseAgents(data []byte) map[string]ActiveState {
+	var entries []agentEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil
 	}
 
-	// Map CWD -> most recently modified session ID.
-	type cwdSession struct {
-		id       string
-		modified int64
-	}
-	cwdToLatest := make(map[string]cwdSession)
-	for _, s := range sessions {
-		if s.ProjectPath == "" {
+	states := make(map[string]ActiveState, len(entries))
+	for _, e := range entries {
+		if e.SessionID == "" {
 			continue
 		}
-		mod := s.Modified.Unix()
-		if existing, ok := cwdToLatest[s.ProjectPath]; !ok || mod > existing.modified {
-			cwdToLatest[s.ProjectPath] = cwdSession{id: s.SessionID, modified: mod}
+		state := StateIdle
+		if e.Status == "busy" {
+			state = StateBusy
+		}
+		// Several processes can report the same session; busy wins.
+		if states[e.SessionID] != StateBusy {
+			states[e.SessionID] = state
 		}
 	}
-
-	// Resumed sessions first (exact match).
-	for _, p := range procs {
-		if p.resumeID != "" && knownIDs[p.resumeID] {
-			active[p.resumeID] = true
-		}
-	}
-
-	// Fresh sessions: match CWD to the most recent session in that directory.
-	// Sort by PID descending so newer processes take precedence.
-	sort.Slice(procs, func(i, j int) bool {
-		return procs[i].pid > procs[j].pid
-	})
-	for _, p := range procs {
-		if p.resumeID != "" || p.cwd == "" {
-			continue
-		}
-		if latest, ok := cwdToLatest[p.cwd]; ok {
-			active[latest.id] = true
-		}
-	}
-
-	return active
+	return states
 }

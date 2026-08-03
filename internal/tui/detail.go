@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -44,7 +45,7 @@ func (d *detailPane) toggle() {
 
 // view renders the detail pane for the given session.
 // Returns exactly detailHeight lines (1 border + detailHeight-1 content).
-func (d *detailPane) view(s *db.Session, width int, active bool) string {
+func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) string {
 	if s == nil {
 		return d.empty(width)
 	}
@@ -53,8 +54,11 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 	var lines []string
 
 	// Active indicator
-	if active {
+	switch active {
+	case scanner.StateBusy:
 		lines = append(lines, detailActiveStyle.Render("● ACTIVE SESSION"))
+	case scanner.StateIdle:
+		lines = append(lines, idleStyle.Render("○ IDLE SESSION"))
 	}
 
 	// Title (bold, prominent) or folder if no title

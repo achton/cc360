@@ -71,9 +71,13 @@ var (
 				Foreground(colorBlue).
 				Background(colorSurface0)
 
-	// Active session indicator
+	// Active session indicator (Claude is working)
 	activeStyle = lipgloss.NewStyle().
 			Foreground(colorGreen)
+
+	// Idle session indicator (running, waiting for input)
+	idleStyle = lipgloss.NewStyle().
+			Foreground(colorSubtext0)
 
 	// Muted text (inactive indicator alignment)
 	mutedStyle = lipgloss.NewStyle().

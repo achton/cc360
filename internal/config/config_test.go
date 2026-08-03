@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,5 +111,54 @@ scan_paths = ["/tmp/test"]
 	}
 	if cfg.SortBy != "modified" {
 		t.Errorf("sort_by = %q, want modified (default)", cfg.SortBy)
+	}
+}
+
+// show_active defaults to true, so an existing config that predates the key
+// keeps the indicators rather than silently losing them to Go's zero value.
+func TestShowActiveDefaultsTrue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `scan_paths = ["/tmp/test"]`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ShowActive {
+		t.Error("ShowActive = false, want true when the key is absent")
+	}
+}
+
+func TestShowActiveExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `
+scan_paths = ["/tmp/test"]
+show_active = false
+`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ShowActive {
+		t.Error("ShowActive = true, want false when explicitly disabled")
+	}
+}
+
+// The generated default config must parse back to the intended defaults.
+func TestDefaultConfigParsesToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	body := strings.Replace(defaultConfig, `scan_paths = []`, `scan_paths = ["/tmp/test"]`, 1)
+	writeConfig(t, dir, body)
+
+	cfg, shouldExit, err := Load()
+	if err != nil || shouldExit {
+		t.Fatalf("Load: err=%v shouldExit=%v", err, shouldExit)
+	}
+	if !cfg.ShowActive {
+		t.Error("ShowActive = false, want true from the default config")
 	}
 }

@@ -33,7 +33,7 @@ Disk scan → SQLite cache → TUI
 
 ### Concurrency
 
-Active session detection polls running processes every 15 seconds via `activeTickMsg`. Discovery is platform-specific behind a shared `matchActive` core: `/proc` on Linux (`active_linux.go`), `ps` + `lsof` on macOS (`active_darwin.go`).
+Active session detection polls `claude agents --json` every 15 seconds via `activeTickMsg`, which reports each running session's real ID and a busy/idle status. That replaced per-platform process scanning, which could only infer the ID by matching a process CWD against the most recently modified session in that directory. Any failure returns no results, so the indicators go quiet rather than breaking the table. Skipped entirely when `show_active = false`.
 
 ### Styling
 

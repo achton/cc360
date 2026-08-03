@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -37,20 +38,20 @@ type column struct {
 
 // sessionTable renders a fixed header + scrollable rows with a highlighted cursor row.
 type sessionTable struct {
-	columns     []column
-	rows        [][]string
-	activeIDs   map[string]bool
-	sessionInfo string // e.g. "42 sessions" — shown on the indicator line
-	cursor      int
-	offset      int // first visible row index
-	height      int // number of visible data rows
-	width       int
+	columns      []column
+	rows         [][]string
+	activeStates map[string]scanner.ActiveState
+	sessionInfo  string // e.g. "42 sessions" — shown on the indicator line
+	cursor       int
+	offset       int // first visible row index
+	height       int // number of visible data rows
+	width        int
 }
 
-func newSessionTable(sessions []db.Session, width, availHeight int, activeIDs map[string]bool) sessionTable {
-	t := sessionTable{width: width, activeIDs: activeIDs}
+func newSessionTable(sessions []db.Session, width, availHeight int, activeStates map[string]scanner.ActiveState) sessionTable {
+	t := sessionTable{width: width, activeStates: activeStates}
 	t.columns = buildColumns(width)
-	t.rows = buildRows(sessions, width, t.columns, activeIDs)
+	t.rows = buildRows(sessions, width, t.columns, activeStates)
 	t.setHeight(availHeight)
 	return t
 }
@@ -59,7 +60,7 @@ func (t *sessionTable) resize(sessions []db.Session, width, availHeight int) {
 	cursor := t.cursor
 	t.width = width
 	t.columns = buildColumns(width)
-	t.rows = buildRows(sessions, width, t.columns, t.activeIDs)
+	t.rows = buildRows(sessions, width, t.columns, t.activeStates)
 	t.setHeight(availHeight)
 	t.SetCursor(cursor)
 }
@@ -380,7 +381,7 @@ func relativeDate(t time.Time) string {
 }
 
 // buildRows converts sessions into pre-formatted table rows.
-func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[string]bool) [][]string {
+func buildRows(sessions []db.Session, width int, cols []column, activeStates map[string]scanner.ActiveState) [][]string {
 	showBranch := width >= 90
 	showMsgs := width >= 100
 
@@ -391,8 +392,11 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 			ts = s.Created
 		}
 		date := relativeDate(ts)
-		if activeIDs[s.SessionID] {
+		switch activeStates[s.SessionID] {
+		case scanner.StateBusy:
 			date += " " + activeStyle.Render("●")
+		case scanner.StateIdle:
+			date += " " + idleStyle.Render("○")
 		}
 
 		// Same precedence as Claude Code's own session picker.

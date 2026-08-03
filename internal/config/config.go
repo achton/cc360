@@ -14,6 +14,13 @@ type Config struct {
 	ScanOrphans    bool     `toml:"scan_orphans"`
 	HideSidechains bool     `toml:"hide_sidechains"`
 	SortBy         string   `toml:"sort_by"`
+	ShowActive     bool     `toml:"show_active"`
+}
+
+// defaults are applied before decoding, so a key absent from the file keeps its
+// default rather than the Go zero value.
+func defaults() Config {
+	return Config{ShowActive: true}
 }
 
 const defaultConfig = `# Directories to scan for Claude Code sessions.
@@ -28,6 +35,10 @@ hide_sidechains = true
 
 # Default sort order: "modified", "created", "messages", "project".
 sort_by = "modified"
+
+# Mark sessions that are currently running: a filled dot when Claude is
+# working, a hollow one when it is waiting. Polls "claude agents" every 15s.
+show_active = true
 `
 
 func configDir() string {
@@ -74,7 +85,7 @@ func Load() (Config, bool, error) {
 		return Config{}, true, nil
 	}
 
-	var cfg Config
+	cfg := defaults()
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return Config{}, true, fmt.Errorf("parsing config: %w", err)
 	}

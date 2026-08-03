@@ -115,10 +115,12 @@ func main() {
 		filtered = append(filtered, s)
 	}
 
-	// Detect active sessions
-	activeIDs := scanner.ActiveSessionIDs(sessions)
+	var activeStates map[string]scanner.ActiveState
+	if cfg.ShowActive {
+		activeStates = scanner.ActiveSessions()
+	}
 
-	m := tui.New(database, cfg, filtered, sessions, activeIDs)
+	m := tui.New(database, cfg, filtered, sessions, activeStates)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -128,13 +130,17 @@ func main() {
 
 func runDemo() {
 	cfg := config.Config{
-		ScanPaths: []string{"~/Code"},
-		SortBy:    "modified",
+		ScanPaths:  []string{"~/Code"},
+		SortBy:     "modified",
+		ShowActive: true,
 	}
 	sessions := demo.Sessions()
-	// Mark one session as "active" for demo purposes
-	activeIDs := map[string]bool{sessions[0].SessionID: true}
-	m := tui.New(nil, cfg, sessions, nil, activeIDs)
+	// Show both indicator states.
+	activeStates := map[string]scanner.ActiveState{
+		sessions[0].SessionID: scanner.StateBusy,
+		sessions[1].SessionID: scanner.StateIdle,
+	}
+	m := tui.New(nil, cfg, sessions, nil, activeStates)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
