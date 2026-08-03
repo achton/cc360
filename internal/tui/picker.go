@@ -314,21 +314,6 @@ func (p *projectPicker) selectedProjects() []string {
 	return result
 }
 
-func (p *projectPicker) hasSelection() bool {
-	for _, root := range p.roots {
-		if root.isGroup() {
-			for _, c := range root.children {
-				if c.selected {
-					return true
-				}
-			}
-		} else if root.selected {
-			return true
-		}
-	}
-	return false
-}
-
 var (
 	pickerTitleStyle = lipgloss.NewStyle().
 				Bold(true).

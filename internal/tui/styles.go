@@ -4,8 +4,6 @@ import "github.com/charmbracelet/lipgloss"
 
 // Catppuccin Mocha palette — slightly boosted for vibrancy
 var (
-	colorBase     = lipgloss.Color("#1e1e2e")
-	colorMantle   = lipgloss.Color("#181825")
 	colorSurface0 = lipgloss.Color("#3b3b52")
 	colorSurface1 = lipgloss.Color("#525270")
 	colorOverlay0 = lipgloss.Color("#8888a4")
@@ -16,7 +14,6 @@ var (
 	colorMauve    = lipgloss.Color("#d4b0ff")
 	colorGreen    = lipgloss.Color("#b5f0b0")
 	colorYellow   = lipgloss.Color("#ffe5a0")
-	colorRed      = lipgloss.Color("#ff9bb5")
 	colorPeach    = lipgloss.Color("#ffc49a")
 	colorDim      = lipgloss.Color("#706f87")
 )
