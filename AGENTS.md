@@ -13,7 +13,7 @@ go vet ./...                                      # Lint
 
 ## Architecture
 
-CC360 is a Go/Bubbletea TUI for browsing and resuming Claude Code sessions. Data flows linearly:
+`cc360` is a Go/Bubbletea TUI for browsing and resuming Claude Code sessions. Data flows linearly:
 
 ```
 Disk scan → SQLite cache → TUI

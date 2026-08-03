@@ -1,4 +1,4 @@
-# CC360 — Claude Code 360
+# cc360 - Claude Code 360
 
 [![CI](https://github.com/achton/cc360/actions/workflows/ci.yml/badge.svg)](https://github.com/achton/cc360/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/achton/cc360)](https://github.com/achton/cc360/releases/latest)
@@ -7,11 +7,11 @@
 
 A terminal UI for browsing, searching, filtering, and resuming [Claude Code](https://claude.ai/claude-code) sessions across multiple projects.
 
-![CC360 demo](demo.gif)
+![cc360 demo](demo.gif)
 
 ## Why
 
-After a reboot or across days of work, there's no easy way to see what Claude Code sessions existed, what they were about, or to resume them. Claude Code's `--resume` flag requires knowing the session ID. CC360 gives you a persistent, searchable overview of all sessions across your project directories.
+After a reboot or across days of work, there's no easy way to see what Claude Code sessions existed, what they were about, or to resume them. Claude Code's `--resume` flag requires knowing the session ID. `cc360` gives you a persistent, searchable overview of all sessions across your project directories.
 
 ## Install
 
@@ -58,7 +58,7 @@ Download the latest release for your platform from [GitHub Releases](https://git
 
 ## First run
 
-On first launch, CC360 creates a config file at `~/.config/cc360/config.toml` and exits with setup instructions. Edit the config to add your project directories:
+On first launch, `cc360` creates a config file at `~/.config/cc360/config.toml` and exits with setup instructions. Edit the config to add your project directories:
 
 ```toml
 scan_paths = ["~/Code", "~/Projects"]
@@ -72,10 +72,11 @@ Config file: `~/.config/cc360/config.toml`
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `scan_paths` | `[]` | Directories containing your projects. CC360 scans `~/.claude/projects/` for sessions matching these paths. **Required.** |
+| `scan_paths` | `[]` | Directories containing your projects. `cc360` scans `~/.claude/projects/` for sessions matching these paths. **Required.** |
 | `scan_orphans` | `true` | Include sessions found in `.jsonl` files that aren't listed in any session index. |
 | `hide_sidechains` | `true` | Hide sidechain (branched conversation) sessions. |
 | `sort_by` | `"modified"` | Default sort order. Options: `modified`, `created`, `messages`, `project`. |
+| `show_active` | `true` | Mark sessions that are currently running. See [Active session detection](#active-session-detection). |
 
 ## Keybindings
 
@@ -95,18 +96,18 @@ Config file: `~/.config/cc360/config.toml`
 
 ### Filtering
 
-Press `/` to open the text filter. Type to search across project names, titles, summaries, first prompts, and git branches. Press `Enter` to stop typing and navigate the filtered results — the filter stays visible. Press `/` again to edit the filter text. Press `Esc` to clear.
+Press `/` to open the text filter, which searches project names, titles, first prompts, git branches, and summaries. `Enter` keeps the filter and moves to the results, `/` edits it again, `Esc` clears it.
 
-Press `p` to open the project picker, which shows a collapsible tree of projects grouped by directory. Use `Space` to toggle selection, `←`/`→` to collapse/expand groups, and `Enter` to apply. Multiple projects can be selected at once. Sessions in root directories (not subfolders) appear as a dimmed `(root)` entry.
+Press `p` to open the project picker, a collapsible tree grouped by directory. `Space` toggles selection, `←`/`→` collapse and expand groups, `Enter` applies. Sessions in a root directory rather than a subfolder appear as a dimmed `(root)` entry.
 
 Filters stack: pick projects with `p`, then refine with `/`.
 
 ## Active session detection
 
-CC360 asks Claude Code which sessions are running, via `claude agents --json`, and marks them next to the date:
+`cc360` asks Claude Code which sessions are running, via `claude agents --json`, and marks them next to the date:
 
-- Green `●` — Claude is working
-- Grey `○` — running, waiting for input
+- Green `●`: Claude is working
+- Grey `○`: running, waiting for input
 
 Running sessions cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off.
 
@@ -114,28 +115,29 @@ Running sessions cannot be resumed, to prevent two processes writing one transcr
 
 ### Data sources
 
-CC360 reads Claude Code's own data files:
+`cc360` reads Claude Code's own data files:
 
-- **JSONL transcripts**: `~/.claude/projects/{encoded-path}/{session-id}.jsonl`. CC360 parses the first 15 lines for metadata (cwd, branch, first prompt), then scans the full file for the last timestamp, message count, and the AI-generated session title. This is where all current sessions come from.
-- **Session index**: `~/.claude/projects/{encoded-path}/sessions-index.json`. Claude Code stopped maintaining this in February 2026; CC360 still reads it so older sessions keep their metadata.
+- **JSONL transcripts**: `~/.claude/projects/{encoded-path}/{session-id}.jsonl`. `cc360` parses the first 15 lines for metadata (cwd, branch, first prompt), then scans the full file for the last timestamp, message count, and the AI-generated session title. This is where all current sessions come from.
+- **Session index**: `~/.claude/projects/{encoded-path}/sessions-index.json`. Claude Code stopped maintaining this in February 2026; `cc360` still reads it so older sessions keep their metadata.
 
 The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` → `-home-user-Code-myproject`).
 
 ### Caching
 
-Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, CC360 scans the disk and upserts into the cache.
+Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, `cc360` scans the disk and upserts into the cache.
+
+Claude Code deletes transcripts after 30 days. Sessions that have a title stay in the cache so the title survives, until their project falls outside the scan paths.
 
 ### Session filtering
 
-CC360 automatically filters out non-interactive sessions:
+`cc360` automatically filters out non-interactive sessions:
 
-- **Hook/command sessions** — Sessions containing "Caveat: The messages below were generated by the user while running local commands." These are created by Claude Code's hook system and contain automated output, not interactive conversations.
-- **Sub-agent sessions** — Sessions starting with `<teammate-message>`. These are spawned as background workers and aren't meaningful to resume independently.
+- **Hook/command sessions**: automated hook output, identified by the "Caveat: The messages below were generated by the user while running local commands." preamble.
+- **Sub-agent sessions**: background workers, identified by a leading `<teammate-message>`. Not meaningful to resume on their own.
 
 ### Display
 
-The "Title" column shows (in priority order), matching what Claude Code's own
-`/resume` picker displays:
+The "Title" column shows (in priority order), matching what Claude Code's own `/resume` picker displays:
 
 1. The AI-generated session title, written by Claude Code itself when a session starts
 2. Claude's session summary from the index file, for sessions predating February 2026
@@ -169,11 +171,11 @@ internal/
 ## Tech stack
 
 - [Go](https://go.dev) 1.26+
-- [Bubbletea](https://github.com/charmbracelet/bubbletea) — Elm-architecture TUI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
-- [Bubbles](https://github.com/charmbracelet/bubbles) — Spinner, text input components
-- [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) — Pure Go SQLite (no CGo)
-- [BurntSushi/toml](https://github.com/BurntSushi/toml) — Config parsing
+- [Bubbletea](https://github.com/charmbracelet/bubbletea): Elm-architecture TUI framework
+- [Lipgloss](https://github.com/charmbracelet/lipgloss): terminal styling
+- [Bubbles](https://github.com/charmbracelet/bubbles): spinner and text input components
+- [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite): pure Go SQLite, no CGo
+- [BurntSushi/toml](https://github.com/BurntSushi/toml): config parsing
 
 ## License
 
