@@ -9,6 +9,10 @@ updates:
     labels:
       - dependencies
     open-pull-requests-limit: 10
+    ignore:
+      # Dependabot resolves these to the parent charmbracelet/x module, which
+      # does not contain them, and aborts the whole gomod job. Bump by hand.
+      - dependency-name: "github.com/charmbracelet/x/exp/*"
 
   - package-ecosystem: github-actions
     directory: /
