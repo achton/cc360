@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/achton/cc360/internal/scanner"
@@ -213,7 +214,13 @@ func (db *DB) Search(query string) ([]Session, error) {
 
 // PruneUnseen deletes sessions that were not part of the current scan.
 // This handles deleted sessions, removed scan paths, etc.
-func (db *DB) PruneUnseen(currentIDs []string) (int64, error) {
+//
+// Sessions that carry a harvested title are kept even once they stop being
+// scannable, so a title survives Claude Code deleting the transcript. They are
+// still dropped when their project leaves retainPaths, otherwise removing a scan
+// path would leave its sessions behind forever. Pass no retainPaths to prune
+// every unseen session.
+func (db *DB) PruneUnseen(currentIDs []string, retainPaths []string) (int64, error) {
 	if len(currentIDs) == 0 {
 		return 0, nil
 	}
@@ -242,7 +249,21 @@ func (db *DB) PruneUnseen(currentIDs []string) (int64, error) {
 	}
 	stmt.Close()
 
-	result, err := tx.Exec(`DELETE FROM sessions WHERE session_id NOT IN (SELECT session_id FROM seen_ids)`)
+	if err := fillRetainPaths(tx, retainPaths); err != nil {
+		return 0, err
+	}
+
+	result, err := tx.Exec(`
+		DELETE FROM sessions
+		WHERE session_id NOT IN (SELECT session_id FROM seen_ids)
+		  AND NOT (
+			COALESCE(title, '') <> ''
+			AND EXISTS (
+				SELECT 1 FROM retain_paths rp
+				WHERE sessions.project_path = rp.path
+				   OR sessions.project_path LIKE rp.path || '/%'
+			)
+		  )`)
 	if err != nil {
 		return 0, err
 	}
@@ -251,7 +272,33 @@ func (db *DB) PruneUnseen(currentIDs []string) (int64, error) {
 	if _, err := tx.Exec(`DROP TABLE IF EXISTS seen_ids`); err != nil {
 		return 0, err
 	}
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS retain_paths`); err != nil {
+		return 0, err
+	}
 	return pruned, tx.Commit()
+}
+
+func fillRetainPaths(tx *sql.Tx, paths []string) error {
+	if _, err := tx.Exec(`CREATE TEMP TABLE IF NOT EXISTS retain_paths (path TEXT PRIMARY KEY)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM retain_paths`); err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO retain_paths (path) VALUES (?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if _, err := stmt.Exec(strings.TrimSuffix(p, "/")); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database connection.

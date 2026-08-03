@@ -20,7 +20,7 @@ Disk scan → SQLite cache → TUI
 ```
 
 1. **Scanner** (`internal/scanner/`) reads `~/.claude/projects/*/sessions-index.json` and orphan `.jsonl` files to discover sessions. Claude Code stopped writing `sessions-index.json` in February 2026, so in practice every current session arrives via the orphan JSONL path; the index only supplies older entries that predate that.
-2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). `title` holds the `ai-title` harvested from the transcript, preserved when a later scan finds none. Note it does not survive Claude Code's 30-day transcript cleanup: once a session leaves the scan entirely, `PruneUnseen` removes the row.
+2. **DB** (`internal/db/`) upserts scan results into SQLite (`~/.cache/cc360/cc360.db`). `title` holds the `ai-title` harvested from the transcript, preserved when a later scan finds none. Titled sessions also survive `PruneUnseen`, so a title outlives Claude Code's 30-day transcript cleanup; they are still dropped once their project falls outside the configured scan paths.
 3. **TUI** (`internal/tui/`) renders everything using Bubbletea's Elm architecture (Model → Update → View).
 
 ### TUI Model Composition

@@ -482,7 +482,7 @@ func (m *Model) reloadCmd() tea.Cmd {
 			ids[i] = s.SessionID
 		}
 		// Stale rows are harmless; a real DB fault surfaces on the query below.
-		_, _ = database.PruneUnseen(ids)
+		_, _ = database.PruneUnseen(ids, cfg.ScanPaths)
 
 		all, err := database.AllSessions(cfg.SortBy, true)
 		if err != nil {

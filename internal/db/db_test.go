@@ -287,7 +287,7 @@ func TestPruneUnseen(t *testing.T) {
 	})
 
 	// Only "a" and "c" were seen in current scan
-	pruned, err := db.PruneUnseen([]string{"a", "c"})
+	pruned, err := db.PruneUnseen([]string{"a", "c"}, nil)
 	if err != nil {
 		t.Fatalf("PruneUnseen: %v", err)
 	}
@@ -303,5 +303,69 @@ func TestPruneUnseen(t *testing.T) {
 		if s.SessionID == "b" {
 			t.Error("session 'b' should have been pruned")
 		}
+	}
+}
+
+// A titled session whose transcript Claude Code deleted stays in the cache, so
+// the title is not lost. Untitled ones, and any project no longer scanned, go.
+func TestPruneUnseenRetainsTitled(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{
+		{SessionID: "seen", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p", Title: "Seen"},
+		{SessionID: "titled", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p", Title: "Kept"},
+		{SessionID: "titled-nested", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p/sub", Title: "Kept too"},
+		{SessionID: "untitled", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p"},
+		{SessionID: "out-of-scope", ProjectName: "q", ClaudeDir: "/c", ProjectPath: "/elsewhere/q", Title: "Dropped"},
+	})
+
+	// Only "seen" is still scannable; /code is the sole scan path.
+	if _, err := db.PruneUnseen([]string{"seen"}, []string{"/code"}); err != nil {
+		t.Fatalf("PruneUnseen: %v", err)
+	}
+
+	got := map[string]bool{}
+	all, _ := db.AllSessions("modified", true)
+	for _, s := range all {
+		got[s.SessionID] = true
+	}
+	for _, id := range []string{"seen", "titled", "titled-nested"} {
+		if !got[id] {
+			t.Errorf("session %q should have been retained", id)
+		}
+	}
+	for _, id := range []string{"untitled", "out-of-scope"} {
+		if got[id] {
+			t.Errorf("session %q should have been pruned", id)
+		}
+	}
+
+	for _, s := range all {
+		if s.SessionID == "titled" && s.Title != "Kept" {
+			t.Errorf("retained title = %q, want Kept", s.Title)
+		}
+	}
+}
+
+// A path prefix must not match a sibling directory with a longer name.
+func TestPruneUnseenPathPrefixIsNotSubstring(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{
+		{SessionID: "keep", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p", Title: "In scope"},
+		{SessionID: "sibling", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code-private/p", Title: "Different tree"},
+	})
+
+	if _, err := db.PruneUnseen([]string{"none"}, []string{"/code"}); err != nil {
+		t.Fatalf("PruneUnseen: %v", err)
+	}
+
+	all, _ := db.AllSessions("modified", true)
+	if len(all) != 1 || all[0].SessionID != "keep" {
+		ids := []string{}
+		for _, s := range all {
+			ids = append(ids, s.SessionID)
+		}
+		t.Errorf("retained %v, want only [keep]", ids)
 	}
 }
