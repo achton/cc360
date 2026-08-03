@@ -74,7 +74,7 @@ func Load() (Config, bool, error) {
 		if err := os.WriteFile(path, []byte(defaultConfig), 0o644); err != nil {
 			return Config{}, true, fmt.Errorf("writing default config: %w", err)
 		}
-		fmt.Println("Welcome to CC360 -- Claude Code 360")
+		fmt.Println("Welcome to cc360 - Claude Code 360")
 		fmt.Println()
 		fmt.Printf("No configuration found. Created default config at:\n  %s\n\n", path)
 		fmt.Println("You must configure at least one scan path. For example:")

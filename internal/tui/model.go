@@ -359,7 +359,7 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	headerText := headerAppStyle.Render("CC360") + headerTagStyle.Render(" // built by @achton")
+	headerText := headerAppStyle.Render("cc360") + headerTagStyle.Render(" // built by @achton")
 	header := headerStyle.Width(m.width).Render(headerText)
 
 	if len(m.sessions) != len(m.allSessions) {
