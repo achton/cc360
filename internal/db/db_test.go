@@ -1,12 +1,91 @@
 package db
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/achton/cc360/internal/scanner"
 )
+
+// legacySchema is the pre-v0.6.0 table, with the summary and summarized_at
+// columns that were dropped. CREATE TABLE IF NOT EXISTS leaves them in place on
+// existing caches, so queries must not depend on column count or order.
+const legacySchema = `
+CREATE TABLE sessions (
+	session_id      TEXT PRIMARY KEY,
+	project_name    TEXT NOT NULL,
+	project_path    TEXT,
+	claude_dir      TEXT NOT NULL,
+	first_prompt    TEXT,
+	existing_summary TEXT,
+	title           TEXT,
+	summary         TEXT,
+	message_count   INTEGER,
+	created         TEXT,
+	modified        TEXT,
+	git_branch      TEXT,
+	is_sidechain    INTEGER DEFAULT 0,
+	jsonl_path      TEXT,
+	last_scanned    TEXT,
+	summarized_at   TEXT
+);`
+
+func TestOpenLegacySchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	conn, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := conn.Exec(legacySchema); err != nil {
+		t.Fatalf("legacy schema: %v", err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO sessions (session_id, project_name, claude_dir, existing_summary,
+		 title, summary, modified, summarized_at)
+		 VALUES ('old-1', 'legacy', '/test', 'kept', 'Old Title', 'dropped', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on legacy db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	all, err := db.AllSessions("modified", true)
+	if err != nil {
+		t.Fatalf("AllSessions: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(all))
+	}
+	if all[0].Title != "Old Title" {
+		t.Errorf("title = %q, want Old Title", all[0].Title)
+	}
+	if all[0].ExistingSummary != "kept" {
+		t.Errorf("existing_summary = %q, want kept", all[0].ExistingSummary)
+	}
+
+	// Upsert must not fail against the wider table either.
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "old-1", ProjectName: "legacy", ClaudeDir: "/test",
+	}})
+
+	res, err := db.Search("legacy")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res) != 1 {
+		t.Errorf("Search hits = %d, want 1", len(res))
+	}
+}
 
 func testDB(t *testing.T) *DB {
 	t.Helper()
@@ -96,7 +175,7 @@ func TestUpsertOverwritesBranch(t *testing.T) {
 	}
 }
 
-func TestUpsertPreservesSummary(t *testing.T) {
+func TestUpsertPreservesTitle(t *testing.T) {
 	db := testDB(t)
 
 	s := []scanner.Session{{
@@ -105,23 +184,17 @@ func TestUpsertPreservesSummary(t *testing.T) {
 		ClaudeDir:   "/test",
 	}}
 	mustUpsert(t, db, s)
-	// Simulate a stored title/summary (e.g. from a future summarizer).
 	if _, err := db.conn.Exec(
-		`UPDATE sessions SET title = ?, summary = ? WHERE session_id = ?`,
-		"My Title", "My summary", "abc-123",
+		`UPDATE sessions SET title = ? WHERE session_id = ?`, "My Title", "abc-123",
 	); err != nil {
-		t.Fatalf("seed summary: %v", err)
+		t.Fatalf("seed title: %v", err)
 	}
 
-	// Re-upsert
 	mustUpsert(t, db, s)
 
 	all, _ := db.AllSessions("modified", true)
 	if all[0].Title != "My Title" {
 		t.Errorf("title = %q, want My Title", all[0].Title)
-	}
-	if all[0].Summary != "My summary" {
-		t.Errorf("summary = %q, want My summary", all[0].Summary)
 	}
 }
 

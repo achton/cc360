@@ -142,19 +142,7 @@ func renderCell(value string, width int, first bool, role colRole, selected bool
 
 	switch role {
 	case colTitle:
-		// Split "title: summary" and style title portion bold+colored
-		// The raw value uses " — " as separator (set in buildRows)
-		if parts := strings.SplitN(value, " — ", 2); len(parts) == 2 {
-			titleStyle := titleBoldStyle
-			if selected {
-				titleStyle = titleStyle.Background(colorSurface0)
-			}
-			summaryStyle := lipgloss.NewStyle()
-			if selected {
-				summaryStyle = summaryStyle.Background(colorSurface0)
-			}
-			value = titleStyle.Render(parts[0]) + summaryStyle.Render(": "+parts[1])
-		} else if value != "" {
+		if value != "" {
 			titleStyle := titleBoldStyle
 			if selected {
 				titleStyle = titleStyle.Background(colorSurface0)
@@ -407,27 +395,13 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 			date += " " + activeStyle.Render("●")
 		}
 
-		// Title: use " — " as separator so renderCell can style parts independently
-		title := sanitize(s.Title)
-		summary := sanitize(s.Summary)
-		if title != "" && summary != "" {
-			title = title + " — " + summary
-		} else if title != "" {
-			// Has title but no summary yet — show title with first prompt as context
-			fp := sanitize(s.FirstPrompt)
-			if fp != "" {
-				title = title + " — " + fp
-			}
-		} else {
-			// No title — use existing summary or first prompt as fallback
-			title = sanitize(s.ExistingSummary)
-			if title == "" {
-				title = sanitize(s.FirstPrompt)
-			}
-			if title == "" {
-				title = sanitize(s.ProjectName)
-			}
-		}
+		// Same precedence as Claude Code's own session picker.
+		title := firstNonEmpty(
+			sanitize(s.Title),
+			sanitize(s.ExistingSummary),
+			sanitize(s.FirstPrompt),
+			sanitize(s.ProjectName),
+		)
 
 		folder := sanitize(simplifyProjectName(s.ProjectName))
 		if isWorktreePath(s.ProjectName) {
@@ -451,6 +425,15 @@ func buildRows(sessions []db.Session, width int, cols []column, activeIDs map[st
 		rows[i] = row
 	}
 	return rows
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func clamp(v, lo, hi int) int {

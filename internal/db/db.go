@@ -20,19 +20,23 @@ CREATE TABLE IF NOT EXISTS sessions (
 	first_prompt    TEXT,
 	existing_summary TEXT,
 	title           TEXT,
-	summary         TEXT,
 	message_count   INTEGER,
 	created         TEXT,
 	modified        TEXT,
 	git_branch      TEXT,
 	is_sidechain    INTEGER DEFAULT 0,
 	jsonl_path      TEXT,
-	last_scanned    TEXT,
-	summarized_at   TEXT
+	last_scanned    TEXT
 );
 `
 
-// Session is the DB representation, extending scanner.Session with AI-generated fields.
+// sessionColumns is listed explicitly so databases created by older versions,
+// which carry dropped columns, still scan in a known order.
+const sessionColumns = `session_id, project_name, project_path, claude_dir,
+	first_prompt, existing_summary, title, message_count, created, modified,
+	git_branch, is_sidechain, jsonl_path, last_scanned`
+
+// Session is the DB representation, extending scanner.Session with the cached title.
 type Session struct {
 	SessionID       string
 	ProjectName     string
@@ -41,7 +45,6 @@ type Session struct {
 	FirstPrompt     string
 	ExistingSummary string
 	Title           string
-	Summary         string
 	MessageCount    int
 	Created         time.Time
 	Modified        time.Time
@@ -49,7 +52,6 @@ type Session struct {
 	IsSidechain     bool
 	JSONLPath       string
 	LastScanned     time.Time
-	SummarizedAt    time.Time
 }
 
 type DB struct {
@@ -112,7 +114,7 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// Upsert inserts or updates sessions from a scan. Preserves title/summary.
+// Upsert inserts or updates sessions from a scan. Preserves the cached title.
 func (db *DB) Upsert(sessions []scanner.Session) error {
 	tx, err := db.conn.Begin()
 	if err != nil {
@@ -190,7 +192,7 @@ func (db *DB) AllSessions(sortBy string, desc bool) ([]Session, error) {
 	}
 	orderClause := clauses[desc]
 
-	query := "SELECT * FROM sessions ORDER BY " + orderClause
+	query := "SELECT " + sessionColumns + " FROM sessions ORDER BY " + orderClause
 	return db.querySessions(query)
 }
 
@@ -198,8 +200,8 @@ func (db *DB) AllSessions(sortBy string, desc bool) ([]Session, error) {
 func (db *DB) Search(query string) ([]Session, error) {
 	like := "%" + query + "%"
 	return db.querySessions(
-		`SELECT * FROM sessions WHERE
-			project_name LIKE ?1 OR title LIKE ?1 OR summary LIKE ?1
+		`SELECT `+sessionColumns+` FROM sessions WHERE
+			project_name LIKE ?1 OR title LIKE ?1
 			OR first_prompt LIKE ?1 OR git_branch LIKE ?1 OR existing_summary LIKE ?1
 		ORDER BY modified DESC`,
 		like,
@@ -269,22 +271,19 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 			firstPrompt     sql.NullString
 			existingSummary sql.NullString
 			title           sql.NullString
-			summary         sql.NullString
 			created         sql.NullString
 			modified        sql.NullString
 			gitBranch       sql.NullString
 			jsonlPath       sql.NullString
 			lastScanned     sql.NullString
-			summarizedAt    sql.NullString
 			isSidechain     int
 			messageCount    sql.NullInt64
 		)
 		err := rows.Scan(
 			&s.SessionID, &s.ProjectName, &projectPath, &s.ClaudeDir,
-			&firstPrompt, &existingSummary, &title, &summary,
+			&firstPrompt, &existingSummary, &title,
 			&messageCount, &created, &modified,
-			&gitBranch, &isSidechain, &jsonlPath,
-			&lastScanned, &summarizedAt,
+			&gitBranch, &isSidechain, &jsonlPath, &lastScanned,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -293,7 +292,6 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 		s.FirstPrompt = firstPrompt.String
 		s.ExistingSummary = existingSummary.String
 		s.Title = title.String
-		s.Summary = summary.String
 		s.MessageCount = int(messageCount.Int64)
 		s.Created = parseTime(created.String)
 		s.Modified = parseTime(modified.String)
@@ -301,7 +299,6 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 		s.IsSidechain = isSidechain != 0
 		s.JSONLPath = jsonlPath.String
 		s.LastScanned = parseTime(lastScanned.String)
-		s.SummarizedAt = parseTime(summarizedAt.String)
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()

@@ -58,19 +58,11 @@ func (d *detailPane) view(s *db.Session, width int, active bool) string {
 	}
 
 	// Title (bold, prominent) or folder if no title
-	title := sanitize(s.Title)
-	if title == "" {
-		title = sanitize(s.ExistingSummary)
-	}
+	title := firstNonEmpty(sanitize(s.Title), sanitize(s.ExistingSummary))
 	if title != "" {
 		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, width-2)))
 	} else {
 		lines = append(lines, detailTitleStyle.Render(simplifyProjectName(s.ProjectName)))
-	}
-
-	// Line 2: AI summary if available
-	if s.Summary != "" {
-		lines = append(lines, detailPromptStyle.Render(sanitize(s.Summary)))
 	}
 
 	// Remaining: First prompt (word-wrapped, fills available space)
