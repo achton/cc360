@@ -17,11 +17,16 @@ After a reboot or across days of work, there's no easy way to see what Claude Co
 
 Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
 
-### Homebrew (macOS / Linux)
+### Homebrew (macOS)
 
 ```bash
-brew install achton/tap/cc360
+brew install --cask achton/tap/cc360
 ```
+
+Linux users: use the install script or a distro package below. Homebrew casks are
+macOS-only.
+
+Upgrading from a pre-v0.6.0 formula install: `brew uninstall cc360` first.
 
 ### Install script (macOS / Linux)
 

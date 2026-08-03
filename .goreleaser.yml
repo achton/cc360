@@ -55,7 +55,7 @@ changelog:
       - '^(docs|test|ci|chore|style)(\(.+\))?:'
       - "^Merge "
 
-brews:
+homebrew_casks:
   - repository:
       owner: achton
       name: homebrew-tap
@@ -63,3 +63,10 @@ brews:
     homepage: "https://github.com/achton/cc360"
     description: "Terminal UI for browsing and resuming Claude Code sessions"
     license: "MIT"
+    hooks:
+      post:
+        # Binaries are unsigned, so Gatekeeper blocks them without this.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cc360"]
+          end
