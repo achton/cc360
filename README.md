@@ -157,7 +157,7 @@ internal/
 
 ## Tech stack
 
-- [Go](https://go.dev) 1.25+
+- [Go](https://go.dev) 1.26+
 - [Bubbletea](https://github.com/charmbracelet/bubbletea) — Elm-architecture TUI framework
 - [Lipgloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
 - [Bubbles](https://github.com/charmbracelet/bubbles) — Spinner, text input components
