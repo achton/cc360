@@ -26,7 +26,7 @@ brew install --cask achton/tap/cc360
 Linux users: use the install script or a distro package below. Homebrew casks are
 macOS-only.
 
-Upgrading from a pre-v0.6.0 formula install: `brew uninstall cc360` first.
+Upgrading from a pre-v0.5.1 formula install: `brew uninstall cc360` first.
 
 ### Install script (macOS / Linux)
 
