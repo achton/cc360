@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // shellQuote wraps a value in single quotes with proper escaping for safe

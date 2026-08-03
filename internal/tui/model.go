@@ -7,16 +7,15 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Model is the top-level Bubbletea model.
@@ -94,7 +93,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// When picker is active, handle picker keys
 		if m.picker.active {
 			return m.updatePicker(msg)
@@ -201,7 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updatePicker(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Escape), key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Picker):
 		m.picker.close()
@@ -229,15 +228,15 @@ func (m *Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyFilters()
 		return m, nil
 
-	case msg.Type == tea.KeySpace:
+	case msg.String() == "space":
 		m.picker.toggleSelect()
 		return m, nil
 
-	case msg.Type == tea.KeyRight:
+	case msg.String() == "right":
 		m.picker.expand()
 		return m, nil
 
-	case msg.Type == tea.KeyLeft:
+	case msg.String() == "left":
 		m.picker.collapse()
 		return m, nil
 	}
@@ -245,7 +244,7 @@ func (m *Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateFilter(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Escape):
 		m.filter.close()
@@ -257,11 +256,11 @@ func (m *Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter.input.Blur()
 		return m, nil
 
-	case msg.Type == tea.KeyUp:
+	case msg.String() == "up":
 		m.table.MoveUp(1)
 		return m, nil
 
-	case msg.Type == tea.KeyDown:
+	case msg.String() == "down":
 		m.table.MoveDown(1)
 		return m, nil
 	}
@@ -354,9 +353,15 @@ func (m *Model) rebuildTable() {
 	m.table.setHeight(m.tableHeight())
 }
 
-func (m Model) View() string {
+// View builds the frame. AltScreen is declared here rather than passed as a
+// program option, which is how v2 wants terminal state expressed.
+func (m Model) View() tea.View {
+	v := tea.NewView("")
+	v.AltScreen = true
+
 	if m.width == 0 {
-		return "Loading..."
+		v.SetContent("Loading...")
+		return v
 	}
 
 	headerText := headerAppStyle.Render("cc360") + headerTagStyle.Render(" // built by @achton")
@@ -408,7 +413,8 @@ func (m Model) View() string {
 		base = overlayCenter(base, box, m.width, m.height)
 	}
 
-	return base
+	v.SetContent(base)
+	return v
 }
 
 func (m Model) renderHelp() string {

@@ -39,6 +39,19 @@ Active session detection polls `claude agents --json` every 15 seconds via `acti
 
 All styles in `styles.go` use the Catppuccin Mocha palette. Styles are module-level vars, not created in render methods. Table columns have semantic roles (`colNormal`, `colTitle`, `colBranch`) for targeted styling in `renderCell()`.
 
+In Lip Gloss v2, `Width()` counts the border, unlike v1 which added it on top. Any
+bordered box sized to a budget (the picker overlay) must pass the full width.
+
+### Charm v2 notes
+
+`View()` returns a `tea.View`, and terminal state such as `AltScreen` is declared
+on it rather than passed to `tea.NewProgram`. Key handling matches on
+`tea.KeyPressMsg`, whose `Code`/`Text` replaced v1's `Type`/`Runes`.
+
+The v2 renderer emits only the cells that changed. `teatest` assertions must
+therefore wait on content that actually updates: text painted once and never
+touched again is consumed by the first read and never re-sent.
+
 ## Layout Height Budget
 
 The table's `setHeight()` reserves 4 lines of chrome (top separator + column header + separator + info line). The model's `tableHeight()` subtracts header(1) + status(1) + help(1) from terminal height, plus detail pane and filter bar when visible. The info line is always rendered (even when empty) to prevent layout jumps.
