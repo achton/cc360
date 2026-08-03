@@ -129,7 +129,7 @@ CC360 automatically filters out non-interactive sessions:
 
 ### Display
 
-The "Project summary" column shows (in priority order), matching what Claude Code's own
+The "Title" column shows (in priority order), matching what Claude Code's own
 `/resume` picker displays:
 
 1. The AI-generated session title, written by Claude Code itself when a session starts

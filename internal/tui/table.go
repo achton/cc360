@@ -262,7 +262,7 @@ func buildColumns(width int) []column {
 	showMsgs := width >= 100
 
 	// Count columns to compute total gap space (colGap between each pair)
-	numCols := 3 // date, summary, folder (always present)
+	numCols := 3 // date, title, folder (always present)
 	if showBranch {
 		numCols++
 	}
@@ -292,7 +292,7 @@ func buildColumns(width int) []column {
 
 	cols := []column{
 		{Title: "Date", Width: dateW},
-		{Title: "Project summary", Width: titleW},
+		{Title: "Title", Width: titleW},
 		{Title: "Folder", Width: projectW},
 	}
 	if showBranch {
