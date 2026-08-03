@@ -3,6 +3,9 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestSanitize(t *testing.T) {
@@ -191,5 +194,32 @@ func TestTableNavigation(t *testing.T) {
 	table.MoveDown(5)
 	if table.Cursor() != 19 {
 		t.Errorf("after MoveDown past bottom: cursor = %d, want 19", table.Cursor())
+	}
+}
+
+// The active indicator sits after the date, so the column must fit both. A
+// "Today 15:04" date plus a dot previously overflowed and lost the indicator.
+func TestDateColumnFitsActiveIndicator(t *testing.T) {
+	cols := buildColumns(120)
+	dateW := cols[0].Width
+
+	for _, when := range []time.Time{
+		time.Now(),                          // "Today 15:04", the longest form
+		time.Now().Add(-36 * time.Hour),     // "Yesterday"
+		time.Now().Add(-3 * 24 * time.Hour), // "3d ago"
+		time.Date(2020, 1, 2, 3, 4, 0, 0, time.UTC),
+	} {
+		date := relativeDate(when)
+		for _, dot := range []string{"●", "○"} {
+			raw := date + " " + dot
+			if lipgloss.Width(raw) > dateW {
+				t.Errorf("%q needs %d columns, date column is %d", raw, lipgloss.Width(raw), dateW)
+				continue
+			}
+			cell := renderCell(date+" "+activeStyle.Render(dot), dateW, true, colNormal, false)
+			if !strings.Contains(cell, dot) {
+				t.Errorf("indicator %q truncated away for date %q", dot, date)
+			}
+		}
 	}
 }

@@ -255,7 +255,9 @@ func (t *sessionTable) View() string {
 
 // buildColumns computes table columns based on terminal width.
 func buildColumns(width int) []column {
-	dateW := 12
+	// Wide enough for the longest relativeDate ("Today 15:04") plus a trailing
+	// active indicator, which would otherwise be truncated away.
+	dateW := 14
 	msgsW := 6
 	branchW := 16
 
