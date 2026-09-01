@@ -5,11 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test
 
 ```bash
-go build -o cc360 .                              # Build binary
-go test ./... -v -race                            # Full test suite
+make check                                        # fmt + vet + build + test: run before every push
 go test -run TestModelStartsAndQuits ./internal/tui -v  # Single test
-go vet ./...                                      # Lint
 ```
+
+`make check` runs the same gates as CI. The format check (`gofmt`) fails the build, so run `make check`, not a bare `go build`, before you push.
 
 ## Architecture
 
