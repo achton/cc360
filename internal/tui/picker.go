@@ -49,6 +49,24 @@ func displayProjectName(s db.Session) string {
 	return s.ProjectName
 }
 
+// worktreeBadge renders the ⌥ worktree indicator, or "" when there is no name.
+// It truncates a long name rune-safely and includes its own leading space.
+func worktreeBadge(name string) string {
+	if name == "" {
+		return ""
+	}
+	return " " + pickerWorktreeStyle.Render("⌥ "+truncateRunes(name, 21))
+}
+
+// lessTreeNode orders nodes by label, then worktree name, so a worktree sorts
+// next to its parent repo, which shares its label.
+func lessTreeNode(a, b *treeNode) bool {
+	if a.label != b.label {
+		return a.label < b.label
+	}
+	return a.worktreeLabel < b.worktreeLabel
+}
+
 // projInfo aggregates the sessions that share one ProjectName.
 type projInfo struct {
 	count         int
@@ -145,10 +163,7 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 	// worktrees, and worktrees order among themselves by name.
 	for _, g := range groups {
 		sort.Slice(g.children, func(i, j int) bool {
-			if g.children[i].label != g.children[j].label {
-				return g.children[i].label < g.children[j].label
-			}
-			return g.children[i].worktreeLabel < g.children[j].worktreeLabel
+			return lessTreeNode(g.children[i], g.children[j])
 		})
 		total := 0
 		for _, c := range g.children {
@@ -177,10 +192,7 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 		p.roots = append(p.roots, groups[k])
 	}
 	sort.Slice(standalones, func(i, j int) bool {
-		if standalones[i].label != standalones[j].label {
-			return standalones[i].label < standalones[j].label
-		}
-		return standalones[i].worktreeLabel < standalones[j].worktreeLabel
+		return lessTreeNode(standalones[i], standalones[j])
 	})
 	p.roots = append(p.roots, standalones...)
 
@@ -436,12 +448,8 @@ func (p *projectPicker) view(width, height int) string {
 		countStr := pickerCountStyle.Render(fmt.Sprintf(" (%d)", node.count))
 
 		wtTag := ""
-		if node.worktree && node.worktreeLabel != "" {
-			wt := node.worktreeLabel
-			if len(wt) > 20 {
-				wt = wt[:20] + "…"
-			}
-			wtTag = " " + pickerWorktreeStyle.Render("⌥ "+wt)
+		if node.worktree {
+			wtTag = worktreeBadge(node.worktreeLabel)
 		}
 
 		line := indent + check + prefix + label + countStr + wtTag

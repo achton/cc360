@@ -68,9 +68,6 @@ func TestResolveLinkedWorktreeSibling(t *testing.T) {
 	if got.parentProjectName == "" {
 		t.Errorf("parentProjectName is empty, want the main repo name")
 	}
-	if got.repoKey == "" || filepath.Base(got.repoKey) != ".git" {
-		t.Errorf("repoKey = %q, want the main repo's .git dir", got.repoKey)
-	}
 }
 
 func TestResolveWorktreeUnderClaudeDir(t *testing.T) {

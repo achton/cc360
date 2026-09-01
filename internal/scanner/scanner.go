@@ -32,7 +32,6 @@ type Session struct {
 	// When it is false, the DB layer keeps the stored values.
 	WorktreeResolved  bool
 	IsWorktree        bool
-	RepoKey           string // canonical git common dir (repo identity)
 	ParentProjectName string // deriveProjectName of the main worktree root
 	WorktreeName      string // leaf dir name of the worktree (badge text)
 }
@@ -386,7 +385,6 @@ func Scan(cfg config.Config) ([]Session, error) {
 		wt := resolver.resolve(s.ProjectPath)
 		s.WorktreeResolved = wt.resolved
 		s.IsWorktree = wt.isWorktree
-		s.RepoKey = wt.repoKey
 		s.ParentProjectName = wt.parentProjectName
 		s.WorktreeName = wt.worktreeName
 		result = append(result, s)

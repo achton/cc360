@@ -396,7 +396,7 @@ func TestWorktreePreserveAndClear(t *testing.T) {
 		SessionID: "wt", ProjectName: "Code/proj/.claude/worktrees/pr-1", ClaudeDir: "/c",
 		ProjectPath:      "/code/proj/.claude/worktrees/pr-1",
 		WorktreeResolved: true, IsWorktree: true,
-		RepoKey: "/code/proj/.git", ParentProjectName: "Code/proj", WorktreeName: "pr-1",
+		ParentProjectName: "Code/proj", WorktreeName: "pr-1",
 	}})
 	s := findSession(t, db, "wt")
 	if !s.IsWorktree || s.ParentProjectName != "Code/proj" || s.WorktreeName != "pr-1" {

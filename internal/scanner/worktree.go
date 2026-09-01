@@ -12,7 +12,6 @@ import (
 type wtResult struct {
 	resolved          bool   // false = could not inspect (dir gone / damaged): preserve stored
 	isWorktree        bool   // true only for a proven worktree
-	repoKey           string // canonical git common dir (repo identity); "" if unknown
 	parentProjectName string // deriveProjectName of the main worktree root; "" if unknown
 	worktreeName      string // leaf dir name of the worktree (badge text)
 }
@@ -62,51 +61,39 @@ func (r *worktreeResolver) resolve(projectPath string) wtResult {
 //  3. else unresolved (present but damaged, or absent and not Claude-default) so
 //     the DB preserves stored values.
 func (r *worktreeResolver) compute(projectPath string) wtResult {
-	status, git := r.gitDetect(projectPath)
-	switch status {
-	case statusWorktree:
-		return git
-	case statusNotWorktree:
-		return wtResult{resolved: true, repoKey: git.repoKey}
-	case statusAbsent:
+	res, absent := r.gitDetect(projectPath)
+	if res.resolved {
+		return res
+	}
+	// Only an absent directory falls back to the path invariant. A present but
+	// damaged repo returns unresolved, so the DB preserves stored values.
+	if absent {
 		if wt, ok := claudeWorktreeFromPath(projectPath, r.scanPaths); ok {
 			return wt
 		}
 	}
-	return wtResult{} // statusAbsent without a Claude path, or statusUnknown
+	return wtResult{}
 }
-
-type gitStatus int
-
-const (
-	statusUnknown     gitStatus = iota // present but damaged: preserve stored
-	statusAbsent                       // not on disk: path fallback or preserve
-	statusNotWorktree                  // inspected: main checkout / non-git / submodule
-	statusWorktree                     // proven linked worktree
-)
 
 // gitDetect resolves symlinks, then walks up to the nearest .git. Symlink
 // resolution first is required: a worktree's recorded cwd may be a subdirectory
 // of its root, and a lexical walk through a symlink would miss the real .git.
-func (r *worktreeResolver) gitDetect(projectPath string) (gitStatus, wtResult) {
+// It reports absent when the path is gone, which enables the path fallback.
+func (r *worktreeResolver) gitDetect(projectPath string) (res wtResult, absent bool) {
 	start, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
-		return statusAbsent, wtResult{} // gone (or an unreadable ancestor)
+		return wtResult{}, true // gone (or an unreadable ancestor)
 	}
 	dir := filepath.Clean(start)
 	for {
 		probe := r.probeGit(dir)
 		switch probe.kind {
 		case gitDir:
-			return statusNotWorktree, wtResult{
-				resolved: true,
-				repoKey:  canonicalPath(filepath.Join(dir, ".git")),
-			}
+			return wtResult{resolved: true}, false
 		case gitFileWorktree:
 			res := wtResult{
 				resolved:     true,
 				isWorktree:   true,
-				repoKey:      canonicalPath(probe.commonDir),
 				worktreeName: filepath.Base(dir),
 			}
 			// The main worktree root is the parent of a common dir named
@@ -115,18 +102,15 @@ func (r *worktreeResolver) gitDetect(projectPath string) (gitStatus, wtResult) {
 			if filepath.Base(probe.commonDir) == ".git" {
 				res.parentProjectName = deriveProjectName(filepath.Dir(probe.commonDir), r.scanPaths)
 			}
-			return statusWorktree, res
+			return res, false
 		case gitFileOther:
-			return statusNotWorktree, wtResult{
-				resolved: true,
-				repoKey:  canonicalPath(probe.commonDir),
-			}
+			return wtResult{resolved: true}, false
 		case gitUnreadable:
-			return statusUnknown, wtResult{} // damaged: preserve stored
+			return wtResult{}, false // damaged: preserve stored
 		default: // gitNone
 			parent := filepath.Dir(dir)
 			if parent == dir {
-				return statusNotWorktree, wtResult{resolved: true} // no git anywhere
+				return wtResult{resolved: true}, false // no git anywhere
 			}
 			dir = parent
 		}

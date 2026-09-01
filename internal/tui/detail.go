@@ -85,8 +85,8 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	// Line 5: Folder + worktree indicator + path
 	displayName := displayProjectName(*s)
 	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(displayName)
-	if s.IsWorktree && s.WorktreeName != "" {
-		folderLine += " " + pickerWorktreeStyle.Render("⌥ "+s.WorktreeName)
+	if s.IsWorktree {
+		folderLine += worktreeBadge(s.WorktreeName)
 	}
 	// Show the real working directory (the worktree's own path when a worktree).
 	if s.ProjectPath != "" && s.ProjectPath != displayName {
