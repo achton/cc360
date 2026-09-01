@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt vet clean install demo help
+.PHONY: build test lint fmt vet check clean install demo help
 
 BINARY := cc360
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -29,6 +29,9 @@ vet:
 ## fmt: Check formatting (fails if files need formatting)
 fmt:
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+## check: Run the local CI gates (fmt, vet, build, test). Run before you push.
+check: fmt vet build test
 
 ## clean: Remove build artifacts
 clean:

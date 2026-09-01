@@ -26,6 +26,14 @@ type Session struct {
 	GitBranch       string
 	IsSidechain     bool
 	JSONLPath       string
+
+	// Worktree metadata, resolved from git after the session is parsed.
+	// WorktreeResolved is true when resolution could inspect the project on disk.
+	// When it is false, the DB layer keeps the stored values.
+	WorktreeResolved  bool
+	IsWorktree        bool
+	ParentProjectName string // deriveProjectName of the main worktree root
+	WorktreeName      string // leaf dir name of the worktree (badge text)
 }
 
 // indexEntry matches the JSON structure in sessions-index.json.
@@ -369,8 +377,16 @@ func Scan(cfg config.Config) ([]Session, error) {
 		}
 	}
 
+	// Resolve worktree metadata once per session, sharing a cache across the
+	// whole scan so sessions in the same repo reuse probe results.
+	resolver := newWorktreeResolver(cfg.ScanPaths)
 	result := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
+		wt := resolver.resolve(s.ProjectPath)
+		s.WorktreeResolved = wt.resolved
+		s.IsWorktree = wt.isWorktree
+		s.ParentProjectName = wt.parentProjectName
+		s.WorktreeName = wt.worktreeName
 		result = append(result, s)
 	}
 	return result, nil

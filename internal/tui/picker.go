@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/achton/cc360/internal/db"
 	"github.com/charmbracelet/lipgloss"
@@ -11,13 +12,14 @@ import (
 
 // treeNode represents a node in the project tree.
 type treeNode struct {
-	label       string // display label
-	projectName string // full project name for leaves
-	count       int    // session count (leaf) or sum of children (group)
-	children    []*treeNode
-	selected    bool
-	expanded    bool
-	worktree    bool // true if this project is a worktree
+	label         string // display label
+	projectName   string // full project name for leaves (filter key)
+	count         int    // session count (leaf) or sum of children (group)
+	children      []*treeNode
+	selected      bool
+	expanded      bool
+	worktree      bool   // true if this project is a worktree
+	worktreeLabel string // worktree name for the badge
 }
 
 func (n *treeNode) isGroup() bool { return len(n.children) > 0 }
@@ -36,57 +38,78 @@ type projectPicker struct {
 	offset int
 }
 
-// simplifyProjectName strips the .claude/worktrees/ segment from worktree paths,
-// returning just the base project path (e.g. "Code/lb/myproject").
-func simplifyProjectName(name string) string {
-	if idx := strings.Index(name, "/.claude/worktrees/"); idx >= 0 {
-		return name[:idx]
+// displayProjectName is the name a session is shown and grouped under: a
+// worktree adopts its parent repo's name so it sits with the parent, otherwise
+// its own name. The parent name is empty when the main root is unknown (e.g. a
+// bare repo), so such a worktree groups under its own name but still badges.
+func displayProjectName(s db.Session) string {
+	if s.IsWorktree && s.ParentProjectName != "" {
+		return s.ParentProjectName
 	}
-	return name
+	return s.ProjectName
 }
 
-// isWorktreePath returns true if the project name contains a worktree path segment.
-func isWorktreePath(name string) bool {
-	return strings.Contains(name, "/.claude/worktrees/")
-}
-
-// worktreeName extracts the worktree name from a worktree path
-// (e.g. "Code/lb/myproject/.claude/worktrees/pr-123" → "pr-123").
-func worktreeName(name string) string {
-	if idx := strings.Index(name, "/.claude/worktrees/"); idx >= 0 {
-		return name[idx+len("/.claude/worktrees/"):]
+// worktreeBadge renders the ⌥ worktree indicator, or "" when there is no name.
+// It truncates a long name rune-safely and includes its own leading space.
+func worktreeBadge(name string) string {
+	if name == "" {
+		return ""
 	}
-	return ""
+	return " " + pickerWorktreeStyle.Render("⌥ "+truncateRunes(name, 21))
 }
 
-// childLabel returns the part of the project name to show as a leaf label
-// after simplifying worktree paths and stripping the group prefix.
-func childLabel(projectName, groupPrefix string) string {
-	simplified := simplifyProjectName(projectName)
-	return strings.TrimPrefix(simplified, groupPrefix+"/")
+// lessTreeNode orders nodes by label, then worktree name, so a worktree sorts
+// next to its parent repo, which shares its label.
+func lessTreeNode(a, b *treeNode) bool {
+	if a.label != b.label {
+		return a.label < b.label
+	}
+	return a.worktreeLabel < b.worktreeLabel
+}
+
+// projInfo aggregates the sessions that share one ProjectName.
+type projInfo struct {
+	count         int
+	worktree      bool
+	displayName   string
+	worktreeLabel string
+	lastScanned   time.Time
 }
 
 func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool) {
-	counts := make(map[string]int)
+	// Aggregate per ProjectName, taking worktree metadata from the most recently
+	// scanned session: retained older sessions can carry stale metadata.
+	infos := make(map[string]*projInfo)
 	for _, s := range sessions {
-		counts[s.ProjectName]++
+		pi := infos[s.ProjectName]
+		if pi == nil {
+			pi = &projInfo{}
+			infos[s.ProjectName] = pi
+		}
+		pi.count++
+		if pi.lastScanned.IsZero() || s.LastScanned.After(pi.lastScanned) {
+			pi.lastScanned = s.LastScanned
+			pi.worktree = s.IsWorktree
+			pi.displayName = displayProjectName(s)
+			pi.worktreeLabel = s.WorktreeName
+		}
 	}
 
-	// Group by first path component
+	// Group by the first path component of the display name, so worktrees join
+	// their parent repo's group even when their own path lives elsewhere.
 	groups := make(map[string]*treeNode)
 	var standalones []*treeNode
 
-	for name, count := range counts {
-		isWorktree := strings.Contains(name, "/.claude/worktrees/")
-
-		parts := strings.SplitN(name, "/", 2)
+	for name, pi := range infos {
+		parts := strings.SplitN(pi.displayName, "/", 2)
 		if len(parts) == 1 {
 			// No slash — standalone
 			standalones = append(standalones, &treeNode{
-				label:       name,
-				projectName: name,
-				count:       count,
-				worktree:    isWorktree,
+				label:         pi.displayName,
+				projectName:   name,
+				count:         pi.count,
+				worktree:      pi.worktree,
+				worktreeLabel: pi.worktreeLabel,
 			})
 			continue
 		}
@@ -99,10 +122,11 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 			}
 		}
 		groups[groupKey].children = append(groups[groupKey].children, &treeNode{
-			label:       childLabel(name, groupKey),
-			projectName: name,
-			count:       count,
-			worktree:    isWorktree,
+			label:         strings.TrimPrefix(pi.displayName, groupKey+"/"),
+			projectName:   name,
+			count:         pi.count,
+			worktree:      pi.worktree,
+			worktreeLabel: pi.worktreeLabel,
 		})
 	}
 
@@ -111,10 +135,11 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 	for _, s := range standalones {
 		if g, ok := groups[s.label]; ok {
 			g.children = append([]*treeNode{{
-				label:       "(root)",
-				projectName: s.projectName,
-				count:       s.count,
-				worktree:    s.worktree,
+				label:         "(root)",
+				projectName:   s.projectName,
+				count:         s.count,
+				worktree:      s.worktree,
+				worktreeLabel: s.worktreeLabel,
 			}}, g.children...)
 			merged = append(merged, s)
 		}
@@ -133,10 +158,12 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 		standalones = remaining
 	}
 
-	// Sort children and compute group counts
+	// Sort children and compute group counts. A worktree shares its parent's
+	// label, so the empty worktreeLabel of the parent sorts it ahead of its
+	// worktrees, and worktrees order among themselves by name.
 	for _, g := range groups {
 		sort.Slice(g.children, func(i, j int) bool {
-			return g.children[i].label < g.children[j].label
+			return lessTreeNode(g.children[i], g.children[j])
 		})
 		total := 0
 		for _, c := range g.children {
@@ -165,7 +192,7 @@ func (p *projectPicker) open(sessions []db.Session, activeFilter map[string]bool
 		p.roots = append(p.roots, groups[k])
 	}
 	sort.Slice(standalones, func(i, j int) bool {
-		return standalones[i].label < standalones[j].label
+		return lessTreeNode(standalones[i], standalones[j])
 	})
 	p.roots = append(p.roots, standalones...)
 
@@ -422,11 +449,7 @@ func (p *projectPicker) view(width, height int) string {
 
 		wtTag := ""
 		if node.worktree {
-			wt := worktreeName(node.projectName)
-			if len(wt) > 20 {
-				wt = wt[:20] + "…"
-			}
-			wtTag = " " + pickerWorktreeStyle.Render("⌥ "+wt)
+			wtTag = worktreeBadge(node.worktreeLabel)
 		}
 
 		line := indent + check + prefix + label + countStr + wtTag

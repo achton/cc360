@@ -299,7 +299,8 @@ func (m *Model) applyFilters() {
 	if query != "" {
 		filtered := make([]db.Session, 0)
 		for _, s := range result {
-			text := strings.ToLower(s.ProjectName + " " + s.Title +
+			text := strings.ToLower(s.ProjectName + " " + s.ParentProjectName +
+				" " + s.WorktreeName + " " + s.Title +
 				" " + s.FirstPrompt + " " + s.GitBranch + " " + s.ExistingSummary)
 			if strings.Contains(text, query) {
 				filtered = append(filtered, s)
