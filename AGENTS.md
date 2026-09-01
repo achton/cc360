@@ -58,4 +58,6 @@ commit in the changelog (`chore!:`).
 - The scanner reads JSONL metadata from the first 15 lines, then scans the full file for accurate timestamps and message counts.
 - Clipboard uses OSC 52 escape sequences (no external tools needed).
 - Session resumption suspends the TUI via `tea.ExecProcess`, runs `claude --resume`, then restores.
-- Worktree sessions are detected by `/.claude/worktrees/` in the project path.
+- Worktree detection uses git metadata, in `internal/scanner/worktree.go`. The resolver walks from a session's path to the nearest `.git`. A `.git` file is a linked worktree when its admin-dir backlink points back to it. The parent repo comes from `commondir`, and the session groups under that parent. This works for any layout, not only `/.claude/worktrees/`.
+- If the directory is gone, cc360 reads a `<repo>/.claude/worktrees/<name>` path directly. This keeps the parent grouping for a deleted Claude default-layout worktree.
+- Worktree fields are stored per session in SQLite: `is_worktree`, `repo_key`, `parent_project_name`, `worktree_name`. A scan overwrites them when it can read the directory. It keeps them when the directory is gone. `is_worktree` is nullable, and NULL means never resolved. So a worktree keeps its grouping after `git worktree remove`, which erases the on-disk git metadata.

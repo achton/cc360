@@ -409,9 +409,9 @@ func buildRows(sessions []db.Session, width int, cols []column, activeStates map
 			sanitize(s.ProjectName),
 		)
 
-		folder := sanitize(simplifyProjectName(s.ProjectName))
-		if isWorktreePath(s.ProjectName) {
-			wt := worktreeName(s.ProjectName)
+		folder := sanitize(displayProjectName(s))
+		if s.IsWorktree && s.WorktreeName != "" {
+			wt := s.WorktreeName
 			if len(wt) > 20 {
 				wt = wt[:20] + "…"
 			}

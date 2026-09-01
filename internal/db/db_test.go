@@ -369,3 +369,59 @@ func TestPruneUnseenPathPrefixIsNotSubstring(t *testing.T) {
 		t.Errorf("retained %v, want only [keep]", ids)
 	}
 }
+
+// findSession returns the session with the given id, or fails.
+func findSession(t *testing.T, db *DB, id string) Session {
+	t.Helper()
+	all, err := db.AllSessions("modified", true)
+	if err != nil {
+		t.Fatalf("AllSessions: %v", err)
+	}
+	for _, s := range all {
+		if s.SessionID == id {
+			return s
+		}
+	}
+	t.Fatalf("session %q not found", id)
+	return Session{}
+}
+
+// A resolved scan writes worktree metadata; a later unresolved scan (worktree
+// dir gone) preserves it; a later resolved non-worktree scan clears it.
+func TestWorktreePreserveAndClear(t *testing.T) {
+	db := testDB(t)
+
+	// 1. Resolved worktree: metadata is stored.
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "wt", ProjectName: "Code/proj/.claude/worktrees/pr-1", ClaudeDir: "/c",
+		ProjectPath:      "/code/proj/.claude/worktrees/pr-1",
+		WorktreeResolved: true, IsWorktree: true,
+		RepoKey: "/code/proj/.git", ParentProjectName: "Code/proj", WorktreeName: "pr-1",
+	}})
+	s := findSession(t, db, "wt")
+	if !s.IsWorktree || s.ParentProjectName != "Code/proj" || s.WorktreeName != "pr-1" {
+		t.Fatalf("after resolved worktree: %+v", s)
+	}
+
+	// 2. Unresolved scan (dir gone): stored values are preserved.
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "wt", ProjectName: "Code/proj/.claude/worktrees/pr-1", ClaudeDir: "/c",
+		ProjectPath:      "/code/proj/.claude/worktrees/pr-1",
+		WorktreeResolved: false,
+	}})
+	s = findSession(t, db, "wt")
+	if !s.IsWorktree || s.ParentProjectName != "Code/proj" || s.WorktreeName != "pr-1" {
+		t.Fatalf("after unresolved scan, expected preserved metadata: %+v", s)
+	}
+
+	// 3. Resolved non-worktree: stale metadata is cleared.
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "wt", ProjectName: "Code/proj", ClaudeDir: "/c",
+		ProjectPath:      "/code/proj",
+		WorktreeResolved: true, IsWorktree: false,
+	}})
+	s = findSession(t, db, "wt")
+	if s.IsWorktree || s.ParentProjectName != "" || s.WorktreeName != "" {
+		t.Fatalf("after resolved non-worktree, expected cleared metadata: %+v", s)
+	}
+}

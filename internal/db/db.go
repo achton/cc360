@@ -27,15 +27,30 @@ CREATE TABLE IF NOT EXISTS sessions (
 	git_branch      TEXT,
 	is_sidechain    INTEGER DEFAULT 0,
 	jsonl_path      TEXT,
-	last_scanned    TEXT
+	last_scanned    TEXT,
+	is_worktree     INTEGER,
+	repo_key        TEXT,
+	parent_project_name TEXT,
+	worktree_name   TEXT
 );
 `
+
+// worktreeColumns are added to older databases via ALTER TABLE in migrate().
+// is_worktree is deliberately nullable: NULL means "never resolved" (preserve),
+// 0/1 mean a known non-worktree / worktree.
+var worktreeColumns = []struct{ name, decl string }{
+	{"is_worktree", "INTEGER"},
+	{"repo_key", "TEXT"},
+	{"parent_project_name", "TEXT"},
+	{"worktree_name", "TEXT"},
+}
 
 // sessionColumns is listed explicitly so databases created by older versions,
 // which carry dropped columns, still scan in a known order.
 const sessionColumns = `session_id, project_name, project_path, claude_dir,
 	first_prompt, existing_summary, title, message_count, created, modified,
-	git_branch, is_sidechain, jsonl_path, last_scanned`
+	git_branch, is_sidechain, jsonl_path, last_scanned,
+	is_worktree, repo_key, parent_project_name, worktree_name`
 
 // Session is the DB representation, extending scanner.Session with the cached title.
 type Session struct {
@@ -53,6 +68,11 @@ type Session struct {
 	IsSidechain     bool
 	JSONLPath       string
 	LastScanned     time.Time
+
+	IsWorktree        bool
+	RepoKey           string
+	ParentProjectName string
+	WorktreeName      string
 }
 
 type DB struct {
@@ -87,7 +107,62 @@ func Open(path string) (*DB, error) {
 		conn.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
+	if err := migrate(conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("migrating schema: %w", err)
+	}
 	return &DB{conn: conn}, nil
+}
+
+// migrate adds columns introduced after a database was first created. SQLite has
+// no "ADD COLUMN IF NOT EXISTS", so we diff against table_info first. Idempotent.
+func migrate(conn *sql.DB) error {
+	rows, err := conn.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, c := range worktreeColumns {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := conn.Exec("ALTER TABLE sessions ADD COLUMN " + c.name + " " + c.decl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// worktreeArgs returns the four worktree upsert arguments. When resolution could
+// not inspect the project on disk they are all NULL, so the COALESCE in Upsert
+// preserves whatever was stored. When resolved they are concrete (including 0
+// and ""), so a project that stopped being a worktree is cleared.
+func worktreeArgs(s scanner.Session) (isWorktree, repoKey, parentName, worktreeName any) {
+	if !s.WorktreeResolved {
+		return nil, nil, nil, nil
+	}
+	return boolToInt(s.IsWorktree), s.RepoKey, s.ParentProjectName, s.WorktreeName
 }
 
 func formatTime(t time.Time) string {
@@ -128,8 +203,9 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 		INSERT INTO sessions
 			(session_id, project_name, project_path, claude_dir,
 			 first_prompt, existing_summary, title, message_count, created, modified,
-			 git_branch, is_sidechain, jsonl_path, last_scanned)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 git_branch, is_sidechain, jsonl_path, last_scanned,
+			 is_worktree, repo_key, parent_project_name, worktree_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
@@ -145,7 +221,13 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			git_branch = excluded.git_branch,
 			is_sidechain = excluded.is_sidechain,
 			jsonl_path = excluded.jsonl_path,
-			last_scanned = excluded.last_scanned
+			last_scanned = excluded.last_scanned,
+			-- Overwrite when this scan resolved worktree state (non-NULL, even
+			-- when 0/""); preserve stored values when it could not inspect.
+			is_worktree = COALESCE(excluded.is_worktree, sessions.is_worktree),
+			repo_key = COALESCE(excluded.repo_key, sessions.repo_key),
+			parent_project_name = COALESCE(excluded.parent_project_name, sessions.parent_project_name),
+			worktree_name = COALESCE(excluded.worktree_name, sessions.worktree_name)
 	`)
 	if err != nil {
 		return err
@@ -153,11 +235,13 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 	defer stmt.Close()
 
 	for _, s := range sessions {
+		wtIsWorktree, wtRepoKey, wtParentName, wtName := worktreeArgs(s)
 		_, err := stmt.Exec(
 			s.SessionID, s.ProjectName, s.ProjectPath, s.ClaudeDir,
 			s.FirstPrompt, s.ExistingSummary, s.Title, s.MessageCount,
 			formatTime(s.Created), formatTime(s.Modified),
 			s.GitBranch, boolToInt(s.IsSidechain), s.JSONLPath, now,
+			wtIsWorktree, wtRepoKey, wtParentName, wtName,
 		)
 		if err != nil {
 			return fmt.Errorf("upserting session %s: %w", s.SessionID, err)
@@ -207,6 +291,7 @@ func (db *DB) Search(query string) ([]Session, error) {
 		`SELECT `+sessionColumns+` FROM sessions WHERE
 			project_name LIKE ?1 OR title LIKE ?1
 			OR first_prompt LIKE ?1 OR git_branch LIKE ?1 OR existing_summary LIKE ?1
+			OR parent_project_name LIKE ?1 OR worktree_name LIKE ?1
 		ORDER BY modified DESC`,
 		like,
 	)
@@ -317,23 +402,28 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 	for rows.Next() {
 		var s Session
 		var (
-			projectPath     sql.NullString
-			firstPrompt     sql.NullString
-			existingSummary sql.NullString
-			title           sql.NullString
-			created         sql.NullString
-			modified        sql.NullString
-			gitBranch       sql.NullString
-			jsonlPath       sql.NullString
-			lastScanned     sql.NullString
-			isSidechain     int
-			messageCount    sql.NullInt64
+			projectPath       sql.NullString
+			firstPrompt       sql.NullString
+			existingSummary   sql.NullString
+			title             sql.NullString
+			created           sql.NullString
+			modified          sql.NullString
+			gitBranch         sql.NullString
+			jsonlPath         sql.NullString
+			lastScanned       sql.NullString
+			isSidechain       int
+			messageCount      sql.NullInt64
+			isWorktree        sql.NullInt64
+			repoKey           sql.NullString
+			parentProjectName sql.NullString
+			worktreeName      sql.NullString
 		)
 		err := rows.Scan(
 			&s.SessionID, &s.ProjectName, &projectPath, &s.ClaudeDir,
 			&firstPrompt, &existingSummary, &title,
 			&messageCount, &created, &modified,
 			&gitBranch, &isSidechain, &jsonlPath, &lastScanned,
+			&isWorktree, &repoKey, &parentProjectName, &worktreeName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -349,6 +439,10 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 		s.IsSidechain = isSidechain != 0
 		s.JSONLPath = jsonlPath.String
 		s.LastScanned = parseTime(lastScanned.String)
+		s.IsWorktree = isWorktree.Valid && isWorktree.Int64 == 1
+		s.RepoKey = repoKey.String
+		s.ParentProjectName = parentProjectName.String
+		s.WorktreeName = worktreeName.String
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()

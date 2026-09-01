@@ -66,7 +66,7 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	if title != "" {
 		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, width-2)))
 	} else {
-		lines = append(lines, detailTitleStyle.Render(simplifyProjectName(s.ProjectName)))
+		lines = append(lines, detailTitleStyle.Render(displayProjectName(*s)))
 	}
 
 	// Remaining: First prompt (word-wrapped, fills available space)
@@ -83,16 +83,14 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	}
 
 	// Line 5: Folder + worktree indicator + path
-	displayName := simplifyProjectName(s.ProjectName)
+	displayName := displayProjectName(*s)
 	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(displayName)
-	if isWorktreePath(s.ProjectName) {
-		wt := worktreeName(s.ProjectName)
-		folderLine += " " + pickerWorktreeStyle.Render("⌥ "+wt)
+	if s.IsWorktree && s.WorktreeName != "" {
+		folderLine += " " + pickerWorktreeStyle.Render("⌥ "+s.WorktreeName)
 	}
-	// Show the real project path (simplified), not the worktree path
-	projectPath := simplifyProjectName(s.ProjectPath)
-	if projectPath != "" && projectPath != displayName {
-		folderLine += detailMetaStyle.Render("  (" + projectPath + ")")
+	// Show the real working directory (the worktree's own path when a worktree).
+	if s.ProjectPath != "" && s.ProjectPath != displayName {
+		folderLine += detailMetaStyle.Render("  (" + s.ProjectPath + ")")
 	}
 	lines = append(lines, folderLine)
 
