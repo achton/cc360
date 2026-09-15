@@ -7,9 +7,11 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
+	"github.com/charmbracelet/x/ansi"
 )
 
-const detailHeight = 8 // total lines including border
+// The border adds two more lines.
+const detailContentLines = 7
 
 var (
 	detailBorderStyle = lipgloss.NewStyle().
@@ -43,14 +45,14 @@ func (d *detailPane) toggle() {
 	d.visible = !d.visible
 }
 
-// view renders the detail pane for the given session.
-// Returns exactly detailHeight lines (1 border + detailHeight-1 content).
+// view renders the detail pane. Its height is fixed, so every line is cut to
+// the content width. A wider line would wrap and grow the pane.
 func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) string {
 	if s == nil {
 		return d.empty(width)
 	}
 
-	contentLines := detailHeight - 1 // 7 lines of content
+	inner := detailInnerWidth(width)
 	var lines []string
 
 	// Active indicator
@@ -64,7 +66,7 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	// Title (bold, prominent) or folder if no title
 	title := firstNonEmpty(sanitize(s.Title), sanitize(s.ExistingSummary))
 	if title != "" {
-		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, width-2)))
+		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, inner)))
 	} else {
 		lines = append(lines, detailTitleStyle.Render(displayProjectName(*s)))
 	}
@@ -72,7 +74,7 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	// Remaining: First prompt (word-wrapped, fills available space)
 	prompt := sanitize(s.FirstPrompt)
 	if prompt != "" {
-		wrapped := wordWrap(prompt, width-2)
+		wrapped := wordWrap(prompt, inner)
 		maxPromptLines := 3
 		for i, line := range wrapped {
 			if i >= maxPromptLines {
@@ -92,7 +94,7 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	if s.ProjectPath != "" && s.ProjectPath != displayName {
 		folderLine += detailMetaStyle.Render("  (" + s.ProjectPath + ")")
 	}
-	lines = append(lines, folderLine)
+	lines = append(lines, ansi.Truncate(folderLine, inner, "…"))
 
 	// Line 6: Metadata row — less important stuff, compact
 	var meta []string
@@ -112,22 +114,31 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 		idLen = 12
 	}
 	meta = append(meta, "ID: "+s.SessionID[:idLen])
-	lines = append(lines, detailMetaStyle.Render(strings.Join(meta, "  ")))
+	lines = append(lines, ansi.Truncate(detailMetaStyle.Render(strings.Join(meta, "  ")), inner, "…"))
 
 	// Pad or truncate
-	for len(lines) < contentLines {
+	for len(lines) < detailContentLines {
 		lines = append(lines, "")
 	}
-	if len(lines) > contentLines {
-		lines = lines[:contentLines]
+	if len(lines) > detailContentLines {
+		lines = lines[:detailContentLines]
 	}
 
 	content := strings.Join(lines, "\n")
 	return detailBorderStyle.Width(width).Render(content)
 }
 
+// Lip Gloss v2 counts the border and the padding inside Width.
+func detailInnerWidth(width int) int {
+	inner := width - detailBorderStyle.GetHorizontalFrameSize()
+	if inner < 1 {
+		inner = 1
+	}
+	return inner
+}
+
 func (d *detailPane) empty(width int) string {
-	lines := make([]string, detailHeight-1)
+	lines := make([]string, detailContentLines)
 	content := strings.Join(lines, "\n")
 	return detailBorderStyle.Width(width).Render(content)
 }

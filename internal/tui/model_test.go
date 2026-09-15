@@ -329,3 +329,78 @@ func TestPasteReachesFilter(t *testing.T) {
 		t.Errorf("paste selected %d sessions, want 2", len(got.sessions))
 	}
 }
+
+// The pane sits in a fixed height budget, so long text must not grow it.
+func TestDetailPaneKeepsItsSize(t *testing.T) {
+	long := &db.Session{
+		SessionID:   "abcdefgh-1234-5678-9012-abcdefabcdef",
+		ProjectName: "-home-user-Code-a-very-long-project-name-that-keeps-going",
+		ProjectPath: "/home/user/Code/a-very-long-project-name-that-keeps-going",
+		Title:       strings.Repeat("title ", 40),
+		FirstPrompt: strings.Repeat("prompt ", 60),
+		GitBranch:   strings.Repeat("branch-", 20),
+		Modified:    time.Now(),
+	}
+	d := detailPane{visible: true}
+
+	for _, width := range []int{40, 80, 120} {
+		for _, s := range []*db.Session{nil, long} {
+			out := d.view(s, width, scanner.StateBusy)
+			if got := lipgloss.Width(out); got != width {
+				t.Errorf("width %d: rendered %d columns", width, got)
+			}
+			if got, want := lipgloss.Height(out), detailContentLines+2; got != want {
+				t.Errorf("width %d: rendered %d lines, want %d", width, got, want)
+			}
+		}
+	}
+}
+
+// These keys are matched by name now, and a wrong name is silently inert.
+func TestPickerKeysAreNamedCorrectly(t *testing.T) {
+	// A slash in the project name creates a group row to expand and collapse.
+	grouped := []db.Session{
+		{SessionID: "s1", ProjectName: "repo/one", ProjectPath: "/tmp"},
+		{SessionID: "s2", ProjectName: "repo/two", ProjectPath: "/tmp"},
+	}
+	m := testModel(grouped)
+	m.picker.open(grouped, nil)
+	expanded := len(m.picker.flat)
+
+	updated, _ := m.Update(keyCode(tea.KeyLeft))
+	m = *updated.(*Model)
+	if len(m.picker.flat) >= expanded {
+		t.Errorf("left did not collapse the group: %d rows, was %d", len(m.picker.flat), expanded)
+	}
+
+	updated, _ = m.Update(keyCode(tea.KeyRight))
+	m = *updated.(*Model)
+	if len(m.picker.flat) != expanded {
+		t.Errorf("right did not expand the group: %d rows, want %d", len(m.picker.flat), expanded)
+	}
+
+	updated, _ = m.Update(keyCode(tea.KeySpace))
+	m = *updated.(*Model)
+	if len(m.picker.selectedProjects()) == 0 {
+		t.Error("space selected nothing")
+	}
+}
+
+// Matched by name too, while the filter holds focus.
+func TestFilterArrowsMoveTheTable(t *testing.T) {
+	m := testModel(testSessions())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+	m.filter.open()
+
+	updated, _ = m.Update(keyCode(tea.KeyDown))
+	if got := updated.(*Model).table.Cursor(); got != 1 {
+		t.Errorf("down moved the cursor to %d, want 1", got)
+	}
+
+	m = *updated.(*Model)
+	updated, _ = m.Update(keyCode(tea.KeyUp))
+	if got := updated.(*Model).table.Cursor(); got != 0 {
+		t.Errorf("up moved the cursor to %d, want 0", got)
+	}
+}
