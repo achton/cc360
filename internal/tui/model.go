@@ -94,6 +94,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		// v2 delivers bracketed paste as its own message, not as a key press.
+		if m.filter.focused() {
+			return m.sendToFilter(msg)
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		// When picker is active, handle picker keys
 		if m.picker.active {
@@ -268,12 +275,14 @@ func (m *Model) updateFilter(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Pass to text input
+	return m.sendToFilter(msg)
+}
+
+func (m *Model) sendToFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevValue := m.filter.value()
 	var cmd tea.Cmd
 	m.filter.input, cmd = m.filter.input.Update(msg)
 
-	// If value changed, re-filter
 	if m.filter.value() != prevValue {
 		m.applyFilters()
 	}

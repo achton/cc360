@@ -313,3 +313,19 @@ func TestActiveResultAppliesStates(t *testing.T) {
 		t.Errorf("state = %v, want StateBusy", got)
 	}
 }
+
+// v2 delivers paste as tea.PasteMsg, which no longer reaches the filter on its own.
+func TestPasteReachesFilter(t *testing.T) {
+	m := testModel(testSessions())
+	m.filter.open()
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "alpha"})
+	got := updated.(*Model)
+
+	if got.filter.value() != "alpha" {
+		t.Errorf("filter value = %q, want %q", got.filter.value(), "alpha")
+	}
+	if len(got.sessions) != 2 {
+		t.Errorf("paste selected %d sessions, want 2", len(got.sessions))
+	}
+}
