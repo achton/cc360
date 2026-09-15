@@ -7,6 +7,7 @@ import (
 
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 )
@@ -204,5 +205,43 @@ func TestResumeShellCommand(t *testing.T) {
 				t.Errorf("resumeShellCommand() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The poll spawns a claude process per Claude home. Update must hand that to a
+// command instead of running it, or the table freezes until every one returns.
+func TestActiveTickDoesNotPollInline(t *testing.T) {
+	m := testModel(testSessions())
+	m.cfg.ShowActive = true
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(activeTickMsg{})
+	if cmd == nil {
+		t.Fatal("activeTickMsg returned no command, so no poll was scheduled")
+	}
+	if got := updated.(Model).activeStates; got != nil {
+		t.Errorf("activeStates = %v, want nil until the result arrives", got)
+	}
+
+	m.cfg.ShowActive = false
+	if _, cmd := m.Update(activeTickMsg{}); cmd != nil {
+		t.Error("indicators are off, so no poll must be scheduled")
+	}
+}
+
+func TestActiveResultAppliesStates(t *testing.T) {
+	m := testModel(testSessions())
+	m.cfg.ShowActive = true
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	want := map[string]scanner.ActiveState{m.sessions[0].SessionID: scanner.StateBusy}
+	updated, cmd := m.Update(activeResultMsg{states: want})
+	if cmd == nil {
+		t.Error("no command returned, so the poll loop stopped")
+	}
+	if got := updated.(Model).activeStates[m.sessions[0].SessionID]; got != scanner.StateBusy {
+		t.Errorf("state = %v, want StateBusy", got)
 	}
 }
