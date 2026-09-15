@@ -6,8 +6,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
+	tea "charm.land/bubbletea/v2"
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/demo"
@@ -117,7 +116,7 @@ func main() {
 
 	// The first poll runs from Init, so startup does not wait on it.
 	m := tui.New(database, cfg, filtered, sessions, nil)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -138,7 +137,7 @@ func runDemo() {
 		sessions[1].SessionID: scanner.StateIdle,
 	}
 	m := tui.New(nil, cfg, sessions, nil, activeStates)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
