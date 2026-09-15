@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -160,5 +161,144 @@ func TestDefaultConfigParsesToDefaults(t *testing.T) {
 	}
 	if !cfg.ShowActive {
 		t.Error("ShowActive = false, want true from the default config")
+	}
+}
+
+// Most configs omit claude_homes, so the default must cover both one config
+// and a shell running under a second one.
+func TestClaudeHomesDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	writeConfig(t, dir, `scan_paths = ["/tmp/test"]`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{DefaultClaudeHome()}
+	if !slices.Equal(cfg.ClaudeHomes, want) {
+		t.Errorf("ClaudeHomes = %v, want %v", cfg.ClaudeHomes, want)
+	}
+}
+
+func TestClaudeHomesDefaultIncludesEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/personal-config")
+	writeConfig(t, dir, `scan_paths = ["/tmp/test"]`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{DefaultClaudeHome(), "/tmp/personal-config"}
+	if !slices.Equal(cfg.ClaudeHomes, want) {
+		t.Errorf("ClaudeHomes = %v, want %v", cfg.ClaudeHomes, want)
+	}
+}
+
+// The env var only feeds the default. An explicit list is the whole list.
+func TestClaudeHomesExplicitWinsOverEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/from-env")
+	writeConfig(t, dir, `
+scan_paths = ["/tmp/test"]
+claude_homes = ["~/.claude", "~/.claude-personal"]
+`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	want := []string{filepath.Join(home, ".claude"), filepath.Join(home, ".claude-personal")}
+	if !slices.Equal(cfg.ClaudeHomes, want) {
+		t.Errorf("ClaudeHomes = %v, want %v", cfg.ClaudeHomes, want)
+	}
+}
+
+// A home named twice (directly, or once via the env) must not be scanned twice.
+func TestClaudeHomesDedupe(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	writeConfig(t, dir, `
+scan_paths = ["/tmp/test"]
+claude_homes = ["~/.claude", "~/.claude/", "/tmp/other", "/tmp/other"]
+`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{DefaultClaudeHome(), "/tmp/other"}
+	if !slices.Equal(cfg.ClaudeHomes, want) {
+		t.Errorf("ClaudeHomes = %v, want %v", cfg.ClaudeHomes, want)
+	}
+}
+
+// Resume derives the config dir from the project dir, so pin down the shape.
+func TestClaudeHome(t *testing.T) {
+	tests := []struct {
+		name      string
+		claudeDir string
+		want      string
+	}{
+		{"standard layout", "/home/u/.claude/projects/-home-u-code-app", "/home/u/.claude"},
+		{"second config", "/home/u/.claude-personal/projects/-home-u-priv", "/home/u/.claude-personal"},
+		{"not a projects dir", "/home/u/.claude/sessions/-home-u-app", ""},
+		{"degenerate value", "/test", ""},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClaudeHome(tt.claudeDir); got != tt.want {
+				t.Errorf("ClaudeHome(%q) = %q, want %q", tt.claudeDir, got, tt.want)
+			}
+		})
+	}
+}
+
+// A relative home reaches claude from the session's project dir, which
+// resolves against the wrong dir. Load must make it absolute.
+func TestClaudeHomesAreAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	writeConfig(t, dir, `
+scan_paths = ["/tmp/test"]
+claude_homes = ["relative/claude"]
+`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.ClaudeHomes) != 1 {
+		t.Fatalf("ClaudeHomes = %v, want one entry", cfg.ClaudeHomes)
+	}
+	if !filepath.IsAbs(cfg.ClaudeHomes[0]) {
+		t.Errorf("ClaudeHomes[0] = %q, want an absolute path", cfg.ClaudeHomes[0])
+	}
+}
+
+// One configured home need not be the default one, so the pin cannot depend
+// on how many homes exist.
+func TestClaudeEnvPrefixPinsAnyKnownHome(t *testing.T) {
+	quote := func(s string) string { return "'" + s + "'" }
+	tests := []struct {
+		home string
+		want string
+	}{
+		{DefaultClaudeHome(), "CLAUDE_CONFIG_DIR='" + DefaultClaudeHome() + "' "},
+		{"/home/u/.claude-personal", "CLAUDE_CONFIG_DIR='/home/u/.claude-personal' "},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := ClaudeEnvPrefix(tt.home, quote); got != tt.want {
+			t.Errorf("ClaudeEnvPrefix(%q) = %q, want %q", tt.home, got, tt.want)
+		}
 	}
 }

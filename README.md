@@ -72,7 +72,8 @@ Config file: `~/.config/cc360/config.toml`
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `scan_paths` | `[]` | Directories containing your projects. `cc360` scans `~/.claude/projects/` for sessions matching these paths. **Required.** |
+| `scan_paths` | `[]` | Directories containing your projects. `cc360` scans each Claude home's `projects/` dir for sessions matching these paths. **Required.** |
+| `claude_homes` | `["~/.claude"]` | Claude config dirs to read sessions from. See [Multiple Claude configs](#multiple-claude-configs). |
 | `scan_orphans` | `true` | Include sessions found in `.jsonl` files that aren't listed in any session index. |
 | `hide_sidechains` | `true` | Hide sidechain (branched conversation) sessions. |
 | `sort_by` | `"modified"` | Default sort order. Options: `modified`, `created`, `messages`, `project`. |
@@ -102,6 +103,18 @@ Press `p` to open the project picker, a collapsible tree grouped by directory. `
 
 Filters stack: pick projects with `p`, then refine with `/`.
 
+## Multiple Claude configs
+
+Claude Code stores its sessions under one config dir, by default `~/.claude`. If you run it under more than one, for example a work config and a personal one selected with `CLAUDE_CONFIG_DIR`, list them all to see their sessions in one table:
+
+```toml
+claude_homes = ["~/.claude", "~/.claude-personal"]
+```
+
+When the key is absent, `cc360` reads `~/.claude` plus `$CLAUDE_CONFIG_DIR` when that is set. An explicit list replaces the default instead of extending it, so name every dir you want scanned. A dir that does not exist is skipped, and a relative path is made absolute.
+
+`Enter` resumes a session against the config dir it came from. The command copied by `c` carries a matching `CLAUDE_CONFIG_DIR` prefix, because the shell you paste it into can select another config.
+
 ## Active session detection
 
 `cc360` asks Claude Code which sessions are running, via `claude agents --json`, and marks them next to the date:
@@ -109,7 +122,7 @@ Filters stack: pick projects with `p`, then refine with `/`.
 - Green `●`: Claude is working
 - Grey `○`: running, waiting for input
 
-Running sessions cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off.
+Running sessions cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off. Every configured Claude home is polled, because the command only reports its own agents.
 
 ## How it works
 
