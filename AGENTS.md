@@ -28,7 +28,7 @@ Disk scan → SQLite cache → TUI
 
 `Model` in `model.go` owns four subcomponents, each with their own state and `view()`:
 - `sessionTable` — scrollable table with cursor, responsive column layout
-- `detailPane` — togglable session details (8-line fixed height)
+- `detailPane` - togglable session details (fixed height: `detailContentLines` plus a border)
 - `filterInput` — live text search bar
 - `projectPicker` — tree-based multi-select overlay
 
@@ -40,14 +40,18 @@ Active session detection polls `claude agents --json` every 15 seconds via `acti
 
 All styles in `styles.go` use the Catppuccin Mocha palette. Styles are module-level vars, not created in render methods. Table columns have semantic roles (`colNormal`, `colTitle`, `colBranch`) for targeted styling in `renderCell()`.
 
-In Lip Gloss v2, `Width()` counts the border, unlike v1 which added it on top. Any
-bordered box sized to a budget (the picker overlay) must pass the full width.
+In Lip Gloss v2, `Width()` counts the border and the padding, unlike v1 which added the
+border on top. A bordered box sized to a budget must pass the full width, and the content
+inside it must be built to `width - GetHorizontalFrameSize()`. The picker overlay and the
+detail pane both do this. A line wider than that wraps, which makes the box taller than the
+budget allows.
 
 ### Charm v2 notes
 
 `View()` returns a `tea.View`, and terminal state such as `AltScreen` is declared
 on it rather than passed to `tea.NewProgram`. Key handling matches on
-`tea.KeyPressMsg`, whose `Code`/`Text` replaced v1's `Type`/`Runes`.
+`tea.KeyPressMsg`, whose `Code`/`Text` replaced v1's `Type`/`Runes`. Bracketed paste is
+a separate `tea.PasteMsg`, so it has to be routed to the focused input by hand.
 
 The v2 renderer emits only the cells that changed. `teatest` assertions must
 therefore wait on content that actually updates: text painted once and never
