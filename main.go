@@ -117,7 +117,7 @@ func main() {
 
 	var activeStates map[string]scanner.ActiveState
 	if cfg.ShowActive {
-		activeStates = scanner.ActiveSessions()
+		activeStates = scanner.ActiveSessions(cfg.ClaudeHomes)
 	}
 
 	m := tui.New(database, cfg, filtered, sessions, activeStates)

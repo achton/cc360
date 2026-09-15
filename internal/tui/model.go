@@ -469,7 +469,7 @@ func (m *Model) pollActive() map[string]scanner.ActiveState {
 	if !m.cfg.ShowActive {
 		return nil
 	}
-	return scanner.ActiveSessions()
+	return scanner.ActiveSessions(m.cfg.ClaudeHomes)
 }
 
 func (m *Model) reloadCmd() tea.Cmd {
@@ -561,6 +561,9 @@ func (m *Model) resumeSession() tea.Cmd {
 	}
 	c := exec.Command("claude", "--resume", s.SessionID)
 	c.Dir = s.ProjectPath
+	// Pin the session's config dir. claude only resumes sessions of the config
+	// it runs under.
+	c.Env = config.ClaudeEnv(config.ClaudeHome(s.ClaudeDir))
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return execFinishedMsg{err: err}
 	})
@@ -621,6 +624,14 @@ func overlayCenter(base, overlay string, width, height int) string {
 	return sb.String()
 }
 
+// resumeShellCommand builds the clipboard one-liner. The prefix must sit on
+// the claude call, not the cd, or the env never reaches the right command.
+func resumeShellCommand(s *db.Session) string {
+	prefix := config.ClaudeEnvPrefix(config.ClaudeHome(s.ClaudeDir), shellQuote)
+	return fmt.Sprintf("cd %s && %sclaude --resume %s",
+		shellQuote(s.ProjectPath), prefix, shellQuote(s.SessionID))
+}
+
 func (m *Model) copyResumeCommand() {
 	s := m.selectedSession()
 	if s == nil {
@@ -638,8 +649,7 @@ func (m *Model) copyResumeCommand() {
 		m.statusMsg = "Invalid session ID"
 		return
 	}
-	cmd := fmt.Sprintf("cd %s && claude --resume %s", shellQuote(s.ProjectPath), shellQuote(s.SessionID))
-	encoded := base64.StdEncoding.EncodeToString([]byte(cmd))
+	encoded := base64.StdEncoding.EncodeToString([]byte(resumeShellCommand(s)))
 	fmt.Fprintf(os.Stderr, "\033]52;c;%s\007", encoded)
 	m.statusMsg = "Copied resume command to clipboard"
 }

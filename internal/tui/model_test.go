@@ -172,3 +172,37 @@ func TestOverlayCenter(t *testing.T) {
 		t.Errorf("line 4 should start with E, got %q", lines[4])
 	}
 }
+
+// cc360 does not control the CLAUDE_CONFIG_DIR of the shell the command is
+// pasted into, so a known home is always pinned.
+func TestResumeShellCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		claudeDir string
+		want      string
+	}{
+		{
+			name:      "default home",
+			claudeDir: "/home/u/.claude/projects/-home-u-proj",
+			want:      "cd '/home/u/proj' && CLAUDE_CONFIG_DIR='/home/u/.claude' claude --resume 'abc'",
+		},
+		{
+			name:      "second home",
+			claudeDir: "/home/u/.claude-personal/projects/-home-u-proj",
+			want:      "cd '/home/u/proj' && CLAUDE_CONFIG_DIR='/home/u/.claude-personal' claude --resume 'abc'",
+		},
+		{
+			name:      "unrecognisable claude dir inherits the environment",
+			claudeDir: "/test",
+			want:      "cd '/home/u/proj' && claude --resume 'abc'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &db.Session{SessionID: "abc", ProjectPath: "/home/u/proj", ClaudeDir: tt.claudeDir}
+			if got := resumeShellCommand(s); got != tt.want {
+				t.Errorf("resumeShellCommand() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
