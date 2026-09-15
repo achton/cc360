@@ -59,12 +59,17 @@ func worktreeBadge(name string) string {
 }
 
 // lessTreeNode orders nodes by label, then worktree name, so a worktree sorts
-// next to its parent repo, which shares its label.
+// next to its parent repo, which shares its label. The project name is unique,
+// so the last key makes this a total order. Without it, tied nodes keep
+// whatever order the map range built them in.
 func lessTreeNode(a, b *treeNode) bool {
 	if a.label != b.label {
 		return a.label < b.label
 	}
-	return a.worktreeLabel < b.worktreeLabel
+	if a.worktreeLabel != b.worktreeLabel {
+		return a.worktreeLabel < b.worktreeLabel
+	}
+	return a.projectName < b.projectName
 }
 
 // projInfo aggregates the sessions that share one ProjectName.
