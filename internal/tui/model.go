@@ -42,6 +42,10 @@ type execFinishedMsg struct{ err error }
 
 type activeTickMsg struct{}
 
+type activeResultMsg struct {
+	states map[string]scanner.ActiveState
+}
+
 type reloadResultMsg struct {
 	cfg      config.Config
 	sessions []db.Session
@@ -74,10 +78,7 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 }
 
 func (m Model) Init() tea.Cmd {
-	if !m.cfg.ShowActive {
-		return nil
-	}
-	return activeTickCmd()
+	return m.pollActiveCmd()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -172,20 +173,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfg = msg.cfg
 		m.scannerSessions = msg.scanSess
 		m.allSessions = msg.sessions
-		m.activeStates = m.pollActive()
-		m.table.activeStates = m.activeStates
 		// Clear filters and rebuild
 		m.filter.close()
 		m.projectFilter = nil
 		m.sessions = m.allSessions
 		m.rebuildTable()
 		m.statusMsg = fmt.Sprintf("Reloaded — %d sessions", len(m.allSessions))
-		return m, nil
+		return m, m.pollActiveCmd()
 
 	case activeTickMsg:
-		m.activeStates = m.pollActive()
-		m.table.activeStates = m.activeStates
-		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeStates)
+		return m, m.pollActiveCmd()
+
+	case activeResultMsg:
+		m.activeStates = msg.states
+		m.table.activeStates = msg.states
+		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, msg.states)
+		// Space the next poll from this result, so two never overlap.
 		return m, activeTickCmd()
 
 	case execFinishedMsg:
@@ -298,7 +301,8 @@ func (m *Model) applyFilters() {
 	if query != "" {
 		filtered := make([]db.Session, 0)
 		for _, s := range result {
-			text := strings.ToLower(s.ProjectName + " " + s.Title +
+			text := strings.ToLower(s.ProjectName + " " + s.ParentProjectName +
+				" " + s.WorktreeName + " " + s.Title +
 				" " + s.FirstPrompt + " " + s.GitBranch + " " + s.ExistingSummary)
 			if strings.Contains(text, query) {
 				filtered = append(filtered, s)
@@ -469,12 +473,17 @@ func (m *Model) activeState(s *db.Session) scanner.ActiveState {
 	return m.activeStates[s.SessionID]
 }
 
-// pollActive queries running sessions unless the user turned the indicators off.
-func (m *Model) pollActive() map[string]scanner.ActiveState {
+// pollActiveCmd queries running sessions off the UI loop. Each query spawns a
+// claude process per home, which would otherwise freeze the table for as long
+// as they take. Returns nil when the user turned the indicators off.
+func (m *Model) pollActiveCmd() tea.Cmd {
 	if !m.cfg.ShowActive {
 		return nil
 	}
-	return scanner.ActiveSessions()
+	homes := m.cfg.ClaudeHomes
+	return func() tea.Msg {
+		return activeResultMsg{states: scanner.ActiveSessions(homes)}
+	}
 }
 
 func (m *Model) reloadCmd() tea.Cmd {
@@ -566,6 +575,9 @@ func (m *Model) resumeSession() tea.Cmd {
 	}
 	c := exec.Command("claude", "--resume", s.SessionID)
 	c.Dir = s.ProjectPath
+	// Pin the session's config dir. claude only resumes sessions of the config
+	// it runs under.
+	c.Env = config.ClaudeEnv(config.ClaudeHome(s.ClaudeDir))
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return execFinishedMsg{err: err}
 	})
@@ -626,6 +638,14 @@ func overlayCenter(base, overlay string, width, height int) string {
 	return sb.String()
 }
 
+// resumeShellCommand builds the clipboard one-liner. The prefix must sit on
+// the claude call, not the cd, or the env never reaches the right command.
+func resumeShellCommand(s *db.Session) string {
+	prefix := config.ClaudeEnvPrefix(config.ClaudeHome(s.ClaudeDir), shellQuote)
+	return fmt.Sprintf("cd %s && %sclaude --resume %s",
+		shellQuote(s.ProjectPath), prefix, shellQuote(s.SessionID))
+}
+
 func (m *Model) copyResumeCommand() {
 	s := m.selectedSession()
 	if s == nil {
@@ -643,8 +663,7 @@ func (m *Model) copyResumeCommand() {
 		m.statusMsg = "Invalid session ID"
 		return
 	}
-	cmd := fmt.Sprintf("cd %s && claude --resume %s", shellQuote(s.ProjectPath), shellQuote(s.SessionID))
-	encoded := base64.StdEncoding.EncodeToString([]byte(cmd))
+	encoded := base64.StdEncoding.EncodeToString([]byte(resumeShellCommand(s)))
 	fmt.Fprintf(os.Stderr, "\033]52;c;%s\007", encoded)
 	m.statusMsg = "Copied resume command to clipboard"
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/achton/cc360/internal/config"
 )
 
 func encodeDirName(path string) string {
@@ -252,5 +254,98 @@ func TestParseOrphanJSONLTitleTruncated(t *testing.T) {
 	}
 	if len(s.Title) > maxTitleLen {
 		t.Errorf("Title length = %d, want <= %d", len(s.Title), maxTitleLen)
+	}
+}
+
+// writeHome builds a Claude config dir with one project dir and one orphan
+// transcript, and returns the home path.
+func writeHome(t *testing.T, sessionID, cwd string) string {
+	t.Helper()
+	home := t.TempDir()
+	// Claude encodes the project path by replacing "/" with "-".
+	dir := filepath.Join(home, "projects", encodeDirName(cwd))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	line := fmt.Sprintf(
+		`{"type":"system","sessionId":%q,"cwd":%q,"gitBranch":"main","timestamp":"2026-01-01T00:00:00Z"}`,
+		sessionID, cwd)
+	path := filepath.Join(dir, sessionID+".jsonl")
+	if err := os.WriteFile(path, []byte(line+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return home
+}
+
+// Sessions live under the config dir that wrote them. A scan must read every
+// home and keep each session attributable to its own.
+func TestScanReadsEveryClaudeHome(t *testing.T) {
+	work := writeHome(t, "work-session", "/tmp/scanroot/workproj")
+	personal := writeHome(t, "personal-session", "/tmp/scanroot/privproj")
+
+	sessions, err := Scan(config.Config{
+		ScanPaths:   []string{"/tmp/scanroot"},
+		ClaudeHomes: []string{work, personal},
+		ScanOrphans: true,
+	})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	got := make(map[string]string, len(sessions))
+	for _, s := range sessions {
+		got[s.SessionID] = config.ClaudeHome(s.ClaudeDir)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d sessions (%v), want 2", len(got), got)
+	}
+	if got["work-session"] != work {
+		t.Errorf("work-session home = %q, want %q", got["work-session"], work)
+	}
+	if got["personal-session"] != personal {
+		t.Errorf("personal-session home = %q, want %q", got["personal-session"], personal)
+	}
+}
+
+// A second config need not exist on every machine, so a missing home is
+// skipped instead of failing the scan.
+func TestScanSkipsMissingHome(t *testing.T) {
+	work := writeHome(t, "work-session", "/tmp/scanroot/workproj")
+
+	sessions, err := Scan(config.Config{
+		ScanPaths:   []string{"/tmp/scanroot"},
+		ClaudeHomes: []string{filepath.Join(t.TempDir(), "absent"), work},
+		ScanOrphans: true,
+	})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionID != "work-session" {
+		t.Fatalf("got %+v, want just work-session", sessions)
+	}
+}
+
+// The homes list is the precedence order, so a session ID present in two homes
+// resolves deterministically to the first one.
+func TestScanFirstHomeWins(t *testing.T) {
+	first := writeHome(t, "dup", "/tmp/scanroot/a")
+	second := writeHome(t, "dup", "/tmp/scanroot/b")
+
+	sessions, err := Scan(config.Config{
+		ScanPaths:   []string{"/tmp/scanroot"},
+		ClaudeHomes: []string{first, second},
+		ScanOrphans: true,
+	})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions))
+	}
+	if got := config.ClaudeHome(sessions[0].ClaudeDir); got != first {
+		t.Errorf("home = %q, want the first home %q", got, first)
+	}
+	if sessions[0].ProjectPath != "/tmp/scanroot/a" {
+		t.Errorf("ProjectPath = %q, want /tmp/scanroot/a", sessions[0].ProjectPath)
 	}
 }

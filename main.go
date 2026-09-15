@@ -114,12 +114,8 @@ func main() {
 		filtered = append(filtered, s)
 	}
 
-	var activeStates map[string]scanner.ActiveState
-	if cfg.ShowActive {
-		activeStates = scanner.ActiveSessions()
-	}
-
-	m := tui.New(database, cfg, filtered, sessions, activeStates)
+	// The first poll runs from Init, so startup does not wait on it.
+	m := tui.New(database, cfg, filtered, sessions, nil)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -129,9 +125,10 @@ func main() {
 
 func runDemo() {
 	cfg := config.Config{
-		ScanPaths:  []string{"~/Code"},
-		SortBy:     "modified",
-		ShowActive: true,
+		ScanPaths: []string{"~/Code"},
+		SortBy:    "modified",
+		// Off, so polling never replaces the fixed states below.
+		ShowActive: false,
 	}
 	sessions := demo.Sessions()
 	// Show both indicator states.

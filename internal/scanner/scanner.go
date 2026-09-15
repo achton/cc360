@@ -26,6 +26,14 @@ type Session struct {
 	GitBranch       string
 	IsSidechain     bool
 	JSONLPath       string
+
+	// Worktree metadata, resolved from git after the session is parsed.
+	// WorktreeResolved is true when resolution could inspect the project on disk.
+	// When it is false, the DB layer keeps the stored values.
+	WorktreeResolved  bool
+	IsWorktree        bool
+	ParentProjectName string // deriveProjectName of the main worktree root
+	WorktreeName      string // leaf dir name of the worktree (badge text)
 }
 
 // indexEntry matches the JSON structure in sessions-index.json.
@@ -296,22 +304,43 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	}
 }
 
-// Scan discovers Claude Code sessions from disk.
+// Scan discovers Claude Code sessions from disk, reading every dir in
+// cfg.ClaudeHomes. An earlier home wins, so that list is the precedence order.
 func Scan(cfg config.Config) ([]Session, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	sessions := make(map[string]Session)
+	for _, home := range cfg.ClaudeHomes {
+		if err := scanHome(home, cfg, sessions); err != nil {
+			return nil, err
+		}
 	}
-	projectsDir := filepath.Join(home, ".claude", "projects")
+
+	// Resolve worktree metadata once per session, sharing a cache across the
+	// whole scan so sessions in the same repo reuse probe results.
+	resolver := newWorktreeResolver(cfg.ScanPaths)
+	result := make([]Session, 0, len(sessions))
+	for _, s := range sessions {
+		wt := resolver.resolve(s.ProjectPath)
+		s.WorktreeResolved = wt.resolved
+		s.IsWorktree = wt.isWorktree
+		s.ParentProjectName = wt.parentProjectName
+		s.WorktreeName = wt.worktreeName
+		result = append(result, s)
+	}
+	return result, nil
+}
+
+// scanHome adds one Claude config dir's sessions to sessions, keyed by session
+// ID. A missing projects dir is skipped, because a second config need not exist
+// on every machine. Existing entries stay, so an earlier home wins.
+func scanHome(home string, cfg config.Config, sessions map[string]Session) error {
+	projectsDir := filepath.Join(home, "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
-
-	sessions := make(map[string]Session)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -334,6 +363,9 @@ func Scan(cfg config.Config) ([]Session, error) {
 						continue
 					}
 					indexedIDs[e.SessionID] = true
+					if _, exists := sessions[e.SessionID]; exists {
+						continue
+					}
 					sessions[e.SessionID] = Session{
 						SessionID:       e.SessionID,
 						ProjectName:     deriveProjectName(e.ProjectPath, cfg.ScanPaths),
@@ -368,10 +400,5 @@ func Scan(cfg config.Config) ([]Session, error) {
 			}
 		}
 	}
-
-	result := make([]Session, 0, len(sessions))
-	for _, s := range sessions {
-		result = append(result, s)
-	}
-	return result, nil
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
@@ -238,5 +239,77 @@ func TestPickerViewRespectsWidth(t *testing.T) {
 		if got := lipgloss.Width(out); got != want {
 			t.Errorf("picker width = %d, want %d", got, want)
 		}
+	}
+}
+
+// cc360 does not control the CLAUDE_CONFIG_DIR of the shell the command is
+// pasted into, so a known home is always pinned.
+func TestResumeShellCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		claudeDir string
+		want      string
+	}{
+		{
+			name:      "default home",
+			claudeDir: "/home/u/.claude/projects/-home-u-proj",
+			want:      "cd '/home/u/proj' && CLAUDE_CONFIG_DIR='/home/u/.claude' claude --resume 'abc'",
+		},
+		{
+			name:      "second home",
+			claudeDir: "/home/u/.claude-personal/projects/-home-u-proj",
+			want:      "cd '/home/u/proj' && CLAUDE_CONFIG_DIR='/home/u/.claude-personal' claude --resume 'abc'",
+		},
+		{
+			name:      "unrecognisable claude dir inherits the environment",
+			claudeDir: "/test",
+			want:      "cd '/home/u/proj' && claude --resume 'abc'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &db.Session{SessionID: "abc", ProjectPath: "/home/u/proj", ClaudeDir: tt.claudeDir}
+			if got := resumeShellCommand(s); got != tt.want {
+				t.Errorf("resumeShellCommand() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The poll spawns a claude process per Claude home. Update must hand that to a
+// command instead of running it, or the table freezes until every one returns.
+func TestActiveTickDoesNotPollInline(t *testing.T) {
+	m := testModel(testSessions())
+	m.cfg.ShowActive = true
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(activeTickMsg{})
+	if cmd == nil {
+		t.Fatal("activeTickMsg returned no command, so no poll was scheduled")
+	}
+	if got := updated.(Model).activeStates; got != nil {
+		t.Errorf("activeStates = %v, want nil until the result arrives", got)
+	}
+
+	m.cfg.ShowActive = false
+	if _, cmd := m.Update(activeTickMsg{}); cmd != nil {
+		t.Error("indicators are off, so no poll must be scheduled")
+	}
+}
+
+func TestActiveResultAppliesStates(t *testing.T) {
+	m := testModel(testSessions())
+	m.cfg.ShowActive = true
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	want := map[string]scanner.ActiveState{m.sessions[0].SessionID: scanner.StateBusy}
+	updated, cmd := m.Update(activeResultMsg{states: want})
+	if cmd == nil {
+		t.Error("no command returned, so the poll loop stopped")
+	}
+	if got := updated.(Model).activeStates[m.sessions[0].SessionID]; got != scanner.StateBusy {
+		t.Errorf("state = %v, want StateBusy", got)
 	}
 }
