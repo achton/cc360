@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/achton/cc360/actions/workflows/ci.yml/badge.svg)](https://github.com/achton/cc360/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/achton/cc360)](https://github.com/achton/cc360/releases/latest)
-[![Go Report Card](https://goreportcard.com/badge/github.com/achton/cc360)](https://goreportcard.com/report/github.com/achton/cc360)
+[![Go](https://img.shields.io/github/go-mod/go-version/achton/cc360)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A terminal UI for browsing, searching, filtering, and resuming [Claude Code](https://claude.ai/claude-code) sessions across multiple projects.
