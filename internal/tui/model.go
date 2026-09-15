@@ -43,6 +43,10 @@ type execFinishedMsg struct{ err error }
 
 type activeTickMsg struct{}
 
+type activeResultMsg struct {
+	states map[string]scanner.ActiveState
+}
+
 type reloadResultMsg struct {
 	cfg      config.Config
 	sessions []db.Session
@@ -75,10 +79,7 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessi
 }
 
 func (m Model) Init() tea.Cmd {
-	if !m.cfg.ShowActive {
-		return nil
-	}
-	return activeTickCmd()
+	return m.pollActiveCmd()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -173,20 +174,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfg = msg.cfg
 		m.scannerSessions = msg.scanSess
 		m.allSessions = msg.sessions
-		m.activeStates = m.pollActive()
-		m.table.activeStates = m.activeStates
 		// Clear filters and rebuild
 		m.filter.close()
 		m.projectFilter = nil
 		m.sessions = m.allSessions
 		m.rebuildTable()
 		m.statusMsg = fmt.Sprintf("Reloaded — %d sessions", len(m.allSessions))
-		return m, nil
+		return m, m.pollActiveCmd()
 
 	case activeTickMsg:
-		m.activeStates = m.pollActive()
-		m.table.activeStates = m.activeStates
-		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, m.activeStates)
+		return m, m.pollActiveCmd()
+
+	case activeResultMsg:
+		m.activeStates = msg.states
+		m.table.activeStates = msg.states
+		m.table.rows = buildRows(m.sessions, m.width, m.table.columns, msg.states)
+		// Space the next poll from this result, so two never overlap.
 		return m, activeTickCmd()
 
 	case execFinishedMsg:
@@ -464,12 +467,17 @@ func (m *Model) activeState(s *db.Session) scanner.ActiveState {
 	return m.activeStates[s.SessionID]
 }
 
-// pollActive queries running sessions unless the user turned the indicators off.
-func (m *Model) pollActive() map[string]scanner.ActiveState {
+// pollActiveCmd queries running sessions off the UI loop. Each query spawns a
+// claude process per home, which would otherwise freeze the table for as long
+// as they take. Returns nil when the user turned the indicators off.
+func (m *Model) pollActiveCmd() tea.Cmd {
 	if !m.cfg.ShowActive {
 		return nil
 	}
-	return scanner.ActiveSessions(m.cfg.ClaudeHomes)
+	homes := m.cfg.ClaudeHomes
+	return func() tea.Msg {
+		return activeResultMsg{states: scanner.ActiveSessions(homes)}
+	}
 }
 
 func (m *Model) reloadCmd() tea.Cmd {
