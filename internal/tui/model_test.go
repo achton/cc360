@@ -53,13 +53,12 @@ func waitForOutput(tb testing.TB, tm *teatest.TestModel, s string) {
 	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(50*time.Millisecond))
 }
 
-// keyPress builds a printable key press. v2 replaced KeyMsg's Type/Runes with
-// an interface plus Code/Text on KeyPressMsg.
+// keyPress builds a printable key press. KeyPressMsg carries Code and Text.
 func keyPress(r rune) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r, Text: string(r)}
 }
 
-// keyCode builds a non-printable key press, e.g. tea.KeyEscape.
+// keyCode builds a non-printable key press, for example tea.KeyEscape.
 func keyCode(c rune) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: c}
 }
@@ -92,9 +91,8 @@ func TestFilterInput(t *testing.T) {
 	for _, r := range "alpha" {
 		tm.Send(keyPress(r))
 	}
-	// Assert on the session count, not on rows. v2's renderer emits only what
-	// changed, and the alpha rows were already painted, so they are never
-	// re-sent. The count line does change.
+	// Assert on the session count, not on the rows. The renderer emits only
+	// what changed, and the alpha rows are already painted. The count changes.
 	waitForOutput(t, tm, "2/3 sessions")
 
 	// Escape clears the filter, which repaints the beta row.
@@ -188,8 +186,8 @@ func TestOverlayCenter(t *testing.T) {
 	}
 }
 
-// Which sessions survive a text filter, asserted on model state so it does not
-// depend on what the renderer chose to repaint.
+// Read the surviving sessions from model state, because the renderer repaints
+// only what changed.
 func TestApplyFiltersSelectsMatchingSessions(t *testing.T) {
 	tests := []struct {
 		query string
@@ -227,9 +225,8 @@ func TestApplyFiltersSelectsMatchingSessions(t *testing.T) {
 	}
 }
 
-// The picker overlay must land exactly on the requested width, or it pushes
-// past the terminal edge. Under lipgloss v1 the border was added on top of
-// Width, making the box 2 columns too wide.
+// The picker overlay must land exactly on the requested width. A wider box
+// pushes past the terminal edge.
 func TestPickerViewRespectsWidth(t *testing.T) {
 	p := projectPicker{}
 	p.open(testSessions(), nil)
@@ -314,7 +311,7 @@ func TestActiveResultAppliesStates(t *testing.T) {
 	}
 }
 
-// v2 delivers paste as tea.PasteMsg, which no longer reaches the filter on its own.
+// v2 delivers paste as tea.PasteMsg, so Update must route it to the filter.
 func TestPasteReachesFilter(t *testing.T) {
 	m := testModel(testSessions())
 	m.filter.open()
@@ -356,7 +353,7 @@ func TestDetailPaneKeepsItsSize(t *testing.T) {
 	}
 }
 
-// These keys are matched by name now, and a wrong name is silently inert.
+// These keys are matched by name, and a wrong name is silently inert.
 func TestPickerKeysAreNamedCorrectly(t *testing.T) {
 	// A slash in the project name creates a group row to expand and collapse.
 	grouped := []db.Session{
@@ -386,7 +383,7 @@ func TestPickerKeysAreNamedCorrectly(t *testing.T) {
 	}
 }
 
-// Matched by name too, while the filter holds focus.
+// The filter matches these by name too.
 func TestFilterArrowsMoveTheTable(t *testing.T) {
 	m := testModel(testSessions())
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

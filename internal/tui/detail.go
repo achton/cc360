@@ -46,7 +46,7 @@ func (d *detailPane) toggle() {
 }
 
 // view renders the detail pane. Its height is fixed, so every line is cut to
-// the content width. A wider line would wrap and grow the pane.
+// the content width. A wider line wraps and grows the pane.
 func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) string {
 	if s == nil {
 		return d.empty(width)

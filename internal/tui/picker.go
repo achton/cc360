@@ -481,7 +481,7 @@ func (p *projectPicker) view(width, height int) string {
 		b.WriteByte('\n')
 	}
 
-	// lipgloss v2 counts the border inside Width, so the box lands exactly on
-	// the requested width. Under v1 this overflowed by the border size.
+	// Lip Gloss v2 counts the border inside Width, so the box lands exactly on
+	// the requested width.
 	return pickerBorderStyle.Width(width).Render(b.String())
 }

@@ -366,8 +366,8 @@ func (m *Model) rebuildTable() {
 	m.table.setHeight(m.tableHeight())
 }
 
-// View builds the frame. AltScreen is declared here rather than passed as a
-// program option, which is how v2 wants terminal state expressed.
+// View builds the frame. v2 declares terminal state such as AltScreen on the
+// view, not as a program option.
 func (m Model) View() tea.View {
 	v := tea.NewView("")
 	v.AltScreen = true
