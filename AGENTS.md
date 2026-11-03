@@ -71,6 +71,10 @@ Use conventional commit prefixes for changelog generation via GoReleaser:
 Scopes are excluded too (`chore(deps):`), but a breaking-change marker keeps the
 commit in the changelog (`chore!:`).
 
+## Claude Code compatibility
+
+`docs/claude-code-compat.md` lists every Claude Code file, record type, field and command that cc360 depends on, and the Claude Code version it was last reviewed against. Read it before a change to the scanner or to how cc360 calls `claude`. Update it in the same PR when cc360 starts to depend on something new. A changelog review starts from the version that it names.
+
 ## Key Conventions
 
 - Non-interactive sessions (`sdk-*` entrypoints, legacy hook outputs, sub-agents) and hidden sidechains are filtered out by `tui.VisibleSessions`, used by both `main.go` and reload, not in the DB or scanner.
