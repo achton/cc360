@@ -33,6 +33,12 @@ var (
 			Padding(0, 1).
 			Background(colorSurface0)
 
+	// Header notice of a newer release
+	headerUpdateStyle = lipgloss.NewStyle().
+				Foreground(colorYellow).
+				Background(colorSurface0).
+				Bold(true)
+
 	// Status bar
 	statusStyle = lipgloss.NewStyle().
 			Foreground(colorSubtext0).

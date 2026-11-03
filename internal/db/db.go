@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/scanner"
 	_ "modernc.org/sqlite"
 )
@@ -103,11 +104,7 @@ type DB struct {
 }
 
 func defaultPath() string {
-	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "cc360", "cc360.db")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "cc360", "cc360.db")
+	return filepath.Join(config.CacheDir(), "cc360.db")
 }
 
 // Open creates or opens the SQLite database.

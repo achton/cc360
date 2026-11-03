@@ -18,12 +18,13 @@ type Config struct {
 	HideSidechains bool     `toml:"hide_sidechains"`
 	SortBy         string   `toml:"sort_by"`
 	ShowActive     bool     `toml:"show_active"`
+	CheckUpdates   bool     `toml:"check_updates"`
 }
 
 // defaults are applied before decoding, so a key absent from the file keeps its
 // default rather than the Go zero value.
 func defaults() Config {
-	return Config{ScanOrphans: true, HideSidechains: true, ShowActive: true}
+	return Config{ScanOrphans: true, HideSidechains: true, ShowActive: true, CheckUpdates: true}
 }
 
 const defaultConfig = `# Directories to scan for Claude Code sessions.
@@ -49,6 +50,10 @@ sort_by = "modified"
 # working, a diamond when it needs input, a hollow dot when it is idle.
 # Polls "claude agents" every 15s.
 show_active = true
+
+# Check GitHub once a day for a newer cc360 release, and show it in the
+# header with the command to upgrade. cc360 never updates itself.
+check_updates = true
 `
 
 func configDir() string {
@@ -57,6 +62,15 @@ func configDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "cc360")
+}
+
+// CacheDir is where cc360 keeps its session cache and update check.
+func CacheDir() string {
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "cc360")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "cc360")
 }
 
 func configPath() string {

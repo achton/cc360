@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
+	"github.com/achton/cc360/internal/update"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -35,9 +37,18 @@ type Model struct {
 	width         int
 	height        int
 	statusMsg     string
+
+	version        string         // this build, for the update check
+	update         update.Release // a newer release, when one was found
+	upgradeCommand string
 }
 
 type execFinishedMsg struct{ err error }
+
+type updateFoundMsg struct {
+	release update.Release
+	command string
+}
 
 type activeTickMsg struct{}
 
@@ -74,8 +85,38 @@ func New(database *db.DB, cfg config.Config, sessions []db.Session, activeStates
 	}
 }
 
+// WithVersion sets this build's version, which the update check compares.
+func (m Model) WithVersion(v string) Model {
+	m.version = v
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
-	return m.pollActiveCmd()
+	return tea.Batch(m.pollActiveCmd(), m.updateCheckCmd())
+}
+
+const updateCheckTimeout = 10 * time.Second
+
+// updateCheckCmd looks for a newer release off the UI loop. The answer is
+// cached for a day, so most launches do not touch the network.
+func (m Model) updateCheckCmd() tea.Cmd {
+	if !m.cfg.CheckUpdates || m.version == "" {
+		return nil
+	}
+	current := m.version
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
+		defer cancel()
+		rel, ok := update.NewChecker(config.CacheDir()).Newer(ctx, current)
+		if !ok {
+			return nil
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return nil
+		}
+		return updateFoundMsg{release: rel, command: update.Command(exe, rel.Version)}
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -160,6 +201,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.picker.open(m.allSessions, m.projectFilter)
 			return m, nil
 
+		case key.Matches(msg, m.keys.Upgrade):
+			m.copyUpgradeCommand()
+			return m, nil
+
 		case key.Matches(msg, m.keys.Reload):
 			m.statusMsg = "Reloading..."
 			return m, m.reloadCmd()
@@ -183,6 +228,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuildTable()
 		m.statusMsg = fmt.Sprintf("Reloaded — %d sessions", len(m.allSessions))
 		return m, m.pollActiveCmd()
+
+	case updateFoundMsg:
+		m.update = msg.release
+		m.upgradeCommand = msg.command
+		return m, nil
 
 	case activeTickMsg:
 		return m, m.pollActiveCmd()
@@ -375,6 +425,11 @@ func (m Model) View() tea.View {
 	}
 
 	headerText := headerAppStyle.Render("cc360") + headerTagStyle.Render(" // built by @achton")
+	if m.update.Version != "" {
+		headerText += headerUpdateStyle.Render("  ↑ v" + m.update.Version + " available · u to upgrade")
+	}
+	// A wrapped header would push the table down a line.
+	headerText = ansi.Truncate(headerText, m.width-headerStyle.GetHorizontalFrameSize(), "…")
 	header := headerStyle.Width(m.width).Render(headerText)
 
 	if len(m.sessions) != len(m.allSessions) {
@@ -436,6 +491,9 @@ func (m Model) renderHelp() string {
 		{"c", "copy cmd"},
 		{"r", "reload"},
 		{"q", "quit"},
+	}
+	if m.update.Version != "" {
+		pairs = append(pairs[:len(pairs)-1], struct{ key, desc string }{"u", "upgrade"}, pairs[len(pairs)-1])
 	}
 	sep := helpSepStyle.Render(" · ")
 	var s string
@@ -578,6 +636,18 @@ func (m *Model) resumeSession() tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return execFinishedMsg{err: err}
 	})
+}
+
+// copyUpgradeCommand puts the command that installs the newer release on the
+// clipboard and shows it, so it can also be read off the screen.
+func (m *Model) copyUpgradeCommand() {
+	if m.upgradeCommand == "" {
+		m.statusMsg = "No newer cc360 release found"
+		return
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(m.upgradeCommand))
+	fmt.Fprintf(os.Stderr, "\033]52;c;%s\007", encoded)
+	m.statusMsg = "Copied: " + m.upgradeCommand
 }
 
 // overlayCenter composites the overlay box centered on top of the base view,

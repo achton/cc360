@@ -75,7 +75,7 @@ func main() {
 	}
 
 	// The first poll runs from Init, so startup does not wait on it.
-	m := tui.New(database, cfg, sessions, nil)
+	m := tui.New(database, cfg, sessions, nil).WithVersion(buildVersion())
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
