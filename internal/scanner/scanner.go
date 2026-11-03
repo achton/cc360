@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +21,8 @@ type Session struct {
 	ClaudeDir       string
 	FirstPrompt     string
 	ExistingSummary string
-	Title           string
+	Title           string // latest ai-title
+	CustomTitle     string // name given with /rename, or the agent name
 	MessageCount    int
 	Created         time.Time
 	Modified        time.Time
@@ -54,16 +57,21 @@ type indexFile struct {
 	Entries []indexEntry `json:"entries"`
 }
 
-// jsonlEntry is a minimal representation of a JSONL line for orphan parsing.
+// jsonlEntry is the subset of a transcript record the scanner reads.
+// decodeEntry maps the JSON keys.
 type jsonlEntry struct {
-	Type        string          `json:"type"`
-	SessionID   string          `json:"sessionId"`
-	Cwd         string          `json:"cwd"`
-	GitBranch   string          `json:"gitBranch"`
-	IsSidechain bool            `json:"isSidechain"`
-	Timestamp   string          `json:"timestamp"`
-	AITitle     string          `json:"aiTitle"`
-	Message     json.RawMessage `json:"message"`
+	Type             string
+	SessionID        string
+	Cwd              string
+	GitBranch        string
+	IsSidechain      bool
+	IsMeta           bool
+	IsCompactSummary bool
+	Timestamp        string
+	AITitle          string
+	CustomTitle      string
+	AgentName        string
+	Message          json.RawMessage
 }
 
 type messageContent struct {
@@ -184,7 +192,84 @@ func truncateField(s string, maxLen int) string {
 	return s[:maxLen]
 }
 
-// parseOrphanJSONL reads the first ~15 lines of a JSONL file to extract session metadata.
+// maxLineLen caps how much of one transcript record is buffered. A longer
+// record is skipped, and the scan carries on with the next one.
+const maxLineLen = 64 << 20
+
+// lineReader yields transcript lines of any length, unlike bufio.Scanner, which
+// stops the whole scan at the first line over its limit.
+type lineReader struct {
+	r   *bufio.Reader
+	max int
+	buf []byte
+}
+
+// next returns the next line without its newline, or nil for a skipped
+// oversized one. The slice is only valid until the following call.
+func (l *lineReader) next() ([]byte, error) {
+	l.buf = l.buf[:0]
+	tooLong := false
+	for {
+		chunk, err := l.r.ReadSlice('\n')
+		if !tooLong {
+			if len(l.buf)+len(chunk) > l.max {
+				tooLong = true
+				l.buf = l.buf[:0]
+			} else {
+				l.buf = append(l.buf, chunk...)
+			}
+		}
+		switch {
+		case err == bufio.ErrBufferFull:
+			continue
+		case err == io.EOF && (len(l.buf) > 0 || tooLong):
+			// A last line without a trailing newline.
+		case err != nil:
+			return nil, err
+		}
+		if tooLong {
+			return nil, nil
+		}
+		return bytes.TrimRight(l.buf, "\r\n"), nil
+	}
+}
+
+// skippedRecordPrefixes are bulky bookkeeping records that carry nothing the
+// scanner reads. API request snapshots (Claude Code 2.1.300+) hold whole
+// prompts, and their "message" would otherwise pass for a conversation turn.
+var skippedRecordPrefixes = [][]byte{
+	[]byte(`{"type":"api-request`),
+	[]byte(`{"type":"file-history-`),
+}
+
+func skipRecord(line []byte) bool {
+	for _, p := range skippedRecordPrefixes {
+		if bytes.HasPrefix(line, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// customTitleSidecar is written next to the transcript when a session is
+// renamed, including from outside the CLI.
+type customTitleSidecar struct {
+	CustomTitle string `json:"customTitle"`
+}
+
+func readCustomTitleSidecar(dir, sessionID string) string {
+	data, err := os.ReadFile(filepath.Join(dir, sessionID, "custom-title.json"))
+	if err != nil {
+		return ""
+	}
+	var sc customTitleSidecar
+	if json.Unmarshal(data, &sc) != nil {
+		return ""
+	}
+	return sc.CustomTitle
+}
+
+// parseOrphanJSONL reads a whole transcript for session metadata.
 func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	f, err := os.Open(path)
 	if err != nil {
@@ -194,42 +279,41 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 
 	sessionID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	var (
+		idFromRecord   bool
 		cwd            string
 		gitBranch      string
 		firstTimestamp string
 		lastTimestamp  string
 		firstPrompt    string
 		aiTitle        string
+		customTitle    string
+		agentName      string
 		isSidechain    bool
 		msgCount       int
 	)
 
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for long lines
-
-	// First pass: read first 15 lines for metadata (cwd, branch, firstPrompt, etc.)
-	for i := 0; i < 15 && sc.Scan(); i++ {
-		var entry jsonlEntry
-		if err := json.Unmarshal(sc.Bytes(), &entry); err != nil {
+	lr := lineReader{r: bufio.NewReaderSize(f, 64<<10), max: maxLineLen}
+	var entry jsonlEntry
+	for {
+		line, err := lr.next()
+		if err != nil {
+			break
+		}
+		if len(line) == 0 || skipRecord(line) {
 			continue
 		}
-		if entry.Type == "file-history-snapshot" {
+		if !decodeEntry(line, &entry) {
 			continue
 		}
-		if entry.SessionID != "" {
+		if entry.SessionID != "" && !idFromRecord {
 			sessionID = entry.SessionID
+			idFromRecord = true
 		}
 		if entry.Cwd != "" && cwd == "" {
 			cwd = entry.Cwd
 		}
-		if entry.GitBranch != "" && gitBranch == "" {
-			gitBranch = entry.GitBranch
-		}
 		if entry.IsSidechain {
 			isSidechain = true
-		}
-		if entry.Type == "ai-title" && aiTitle == "" {
-			aiTitle = entry.AITitle
 		}
 		if entry.Timestamp != "" {
 			if firstTimestamp == "" {
@@ -237,41 +321,35 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 			}
 			lastTimestamp = entry.Timestamp
 		}
-		if text, ok := extractUserMessage(entry.Message); ok && firstPrompt == "" {
-			firstPrompt = text
-		}
-		// Count user/assistant messages
-		if len(entry.Message) > 0 {
-			var mc messageContent
-			if json.Unmarshal(entry.Message, &mc) == nil {
-				if mc.Role == "user" || mc.Role == "assistant" {
-					msgCount++
-				}
-			}
-		}
-	}
 
-	// Continue scanning remaining lines for lastTimestamp and msgCount
-	for sc.Scan() {
-		var entry jsonlEntry
-		if err := json.Unmarshal(sc.Bytes(), &entry); err != nil {
-			continue
-		}
-		if entry.Type == "file-history-snapshot" {
-			continue
-		}
-		if entry.Timestamp != "" {
-			lastTimestamp = entry.Timestamp
-		}
-		// Usually within the first 15 lines, but not guaranteed.
-		if entry.Type == "ai-title" && aiTitle == "" {
-			aiTitle = entry.AITitle
-		}
-		if len(entry.Message) > 0 {
-			var mc messageContent
-			if json.Unmarshal(entry.Message, &mc) == nil {
-				if mc.Role == "user" || mc.Role == "assistant" {
-					msgCount++
+		switch entry.Type {
+		case "ai-title":
+			// Claude Code regenerates the title; the last one is current.
+			if entry.AITitle != "" {
+				aiTitle = entry.AITitle
+			}
+		case "custom-title":
+			if entry.CustomTitle != "" {
+				customTitle = entry.CustomTitle
+			}
+		case "agent-name":
+			if entry.AgentName != "" {
+				agentName = entry.AgentName
+			}
+		case "user", "assistant":
+			// The branch can change mid-session; show the latest.
+			if entry.GitBranch != "" {
+				gitBranch = entry.GitBranch
+			}
+			// Meta records are injected context (e.g. the local-command
+			// caveat), not something the user said.
+			if entry.IsMeta || entry.IsCompactSummary {
+				continue
+			}
+			msgCount++
+			if firstPrompt == "" && entry.Type == "user" {
+				if text, ok := extractUserMessage(entry.Message); ok {
+					firstPrompt = text
 				}
 			}
 		}
@@ -281,20 +359,29 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		return nil
 	}
 
+	dir := filepath.Dir(path)
+	if t := readCustomTitleSidecar(dir, sessionID); t != "" {
+		customTitle = t
+	} else if customTitle == "" {
+		customTitle = agentName
+	}
+
 	// Truncate fields to prevent unbounded memory usage from malicious JSONL
 	sessionID = truncateField(sessionID, maxSessionIDLen)
 	cwd = truncateField(cwd, maxCwdLen)
 	gitBranch = truncateField(gitBranch, maxGitBranchLen)
 	firstPrompt = truncateField(firstPrompt, maxFirstPromptLen)
 	aiTitle = truncateField(aiTitle, maxTitleLen)
+	customTitle = truncateField(customTitle, maxTitleLen)
 
 	return &Session{
 		SessionID:    sessionID,
 		ProjectName:  deriveProjectName(cwd, scanPaths),
 		ProjectPath:  cwd,
-		ClaudeDir:    filepath.Dir(path),
+		ClaudeDir:    dir,
 		FirstPrompt:  firstPrompt,
 		Title:        aiTitle,
+		CustomTitle:  customTitle,
 		MessageCount: msgCount,
 		Created:      parseTime(firstTimestamp),
 		Modified:     parseTime(lastTimestamp),
@@ -351,52 +438,65 @@ func scanHome(home string, cfg config.Config, sessions map[string]Session) error
 		}
 
 		dirPath := filepath.Join(projectsDir, entry.Name())
-		indexedIDs := make(map[string]bool)
 
-		// Source 1: sessions-index.json
-		indexPath := filepath.Join(dirPath, "sessions-index.json")
-		if data, err := os.ReadFile(indexPath); err == nil {
-			var idx indexFile
-			if json.Unmarshal(data, &idx) == nil {
-				for _, e := range idx.Entries {
-					if e.SessionID == "" {
-						continue
-					}
-					indexedIDs[e.SessionID] = true
-					if _, exists := sessions[e.SessionID]; exists {
-						continue
-					}
-					sessions[e.SessionID] = Session{
-						SessionID:       e.SessionID,
-						ProjectName:     deriveProjectName(e.ProjectPath, cfg.ScanPaths),
-						ProjectPath:     e.ProjectPath,
-						ClaudeDir:       dirPath,
-						FirstPrompt:     e.FirstPrompt,
-						ExistingSummary: e.Summary,
-						MessageCount:    e.MsgCount,
-						Created:         parseTime(e.Created),
-						Modified:        parseTime(e.Modified),
-						GitBranch:       e.GitBranch,
-						IsSidechain:     e.IsSidechain,
-						JSONLPath:       e.FullPath,
-					}
-				}
-			}
-		}
-
-		// Source 2: orphan JSONL files
+		// The transcript is the live record. The index stopped being written
+		// in February 2026, so an indexed session resumed since then would
+		// otherwise keep its old date and count.
+		fromJSONL := make(map[string]bool)
 		if cfg.ScanOrphans {
 			jsonlFiles, _ := filepath.Glob(filepath.Join(dirPath, "*.jsonl"))
 			for _, jf := range jsonlFiles {
-				stem := strings.TrimSuffix(filepath.Base(jf), ".jsonl")
-				if indexedIDs[stem] {
+				s := parseOrphanJSONL(jf, cfg.ScanPaths)
+				if s == nil {
 					continue
 				}
-				if s := parseOrphanJSONL(jf, cfg.ScanPaths); s != nil {
-					if _, exists := sessions[s.SessionID]; !exists {
-						sessions[s.SessionID] = *s
-					}
+				if _, exists := sessions[s.SessionID]; exists {
+					continue
 				}
+				sessions[s.SessionID] = *s
+				fromJSONL[s.SessionID] = true
+			}
+		}
+
+		// Legacy sessions-index.json: fills in sessions without a transcript,
+		// and the summary it alone carries.
+		indexPath := filepath.Join(dirPath, "sessions-index.json")
+		data, err := os.ReadFile(indexPath)
+		if err != nil {
+			continue
+		}
+		var idx indexFile
+		if json.Unmarshal(data, &idx) != nil {
+			continue
+		}
+		for _, e := range idx.Entries {
+			if e.SessionID == "" {
+				continue
+			}
+			if fromJSONL[e.SessionID] {
+				s := sessions[e.SessionID]
+				if s.ExistingSummary == "" {
+					s.ExistingSummary = e.Summary
+				}
+				sessions[e.SessionID] = s
+				continue
+			}
+			if _, exists := sessions[e.SessionID]; exists {
+				continue
+			}
+			sessions[e.SessionID] = Session{
+				SessionID:       e.SessionID,
+				ProjectName:     deriveProjectName(e.ProjectPath, cfg.ScanPaths),
+				ProjectPath:     e.ProjectPath,
+				ClaudeDir:       dirPath,
+				FirstPrompt:     e.FirstPrompt,
+				ExistingSummary: e.Summary,
+				MessageCount:    e.MsgCount,
+				Created:         parseTime(e.Created),
+				Modified:        parseTime(e.Modified),
+				GitBranch:       e.GitBranch,
+				IsSidechain:     e.IsSidechain,
+				JSONLPath:       e.FullPath,
 			}
 		}
 	}
