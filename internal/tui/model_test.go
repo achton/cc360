@@ -303,13 +303,21 @@ func TestActiveResultAppliesStates(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(Model)
 
-	want := map[string]scanner.Agent{m.sessions[0].SessionID: {State: scanner.StateBusy}}
-	updated, cmd := m.Update(activeResultMsg{states: want})
+	s := m.sessions[0]
+	s.ClaudeDir = "/home/u/.claude/projects/-home-u-p"
+	other := s
+	other.ClaudeDir = "/home/u/.claude-personal/projects/-home-u-p"
+	states := map[string]scanner.Agent{AgentKey(s): {State: scanner.StateBusy}}
+	updated, cmd := m.Update(activeResultMsg{states: states})
 	if cmd == nil {
 		t.Error("no command returned, so the poll loop stopped")
 	}
-	if got := updated.(Model).activeStates[m.sessions[0].SessionID].State; got != scanner.StateBusy {
+	m = updated.(Model)
+	if got := m.agent(&s).State; got != scanner.StateBusy {
 		t.Errorf("state = %v, want StateBusy", got)
+	}
+	if got := m.agent(&other).State; got != scanner.StateNone {
+		t.Errorf("same ID in another home: state = %v, want StateNone", got)
 	}
 }
 

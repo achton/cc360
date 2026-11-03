@@ -211,6 +211,7 @@ const (
 	maxGitBranchLen   = 256
 	maxFirstPromptLen = 1000
 	maxTitleLen       = 200
+	maxSidecarLen     = 64 << 10
 	maxPRLinks        = 20
 )
 
@@ -287,8 +288,16 @@ type customTitleSidecar struct {
 	CustomTitle string `json:"customTitle"`
 }
 
-func readCustomTitleSidecar(dir, sessionID string) string {
-	data, err := os.ReadFile(filepath.Join(dir, sessionID, "custom-title.json"))
+// readCustomTitleSidecar reads the sidecar of the transcript at path. The
+// directory is named after the file, never after a sessionId field, so
+// transcript content cannot point the read elsewhere.
+func readCustomTitleSidecar(path string) string {
+	f, err := os.Open(filepath.Join(strings.TrimSuffix(path, ".jsonl"), "custom-title.json"))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxSidecarLen))
 	if err != nil {
 		return ""
 	}
@@ -405,7 +414,7 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	}
 
 	dir := filepath.Dir(path)
-	if t := readCustomTitleSidecar(dir, sessionID); t != "" {
+	if t := readCustomTitleSidecar(path); t != "" {
 		customTitle = t
 	} else if customTitle == "" {
 		customTitle = agentName
@@ -478,7 +487,7 @@ func loadTranscript(path string, scanPaths []string, cache Cache) *Session {
 		c.ClaudeDir = filepath.Dir(path)
 		c.JSONLPath = path
 		// A rename from outside the CLI rewrites only the sidecar.
-		if t := readCustomTitleSidecar(c.ClaudeDir, c.SessionID); t != "" {
+		if t := readCustomTitleSidecar(path); t != "" {
 			c.CustomTitle = truncateField(t, maxTitleLen)
 		}
 		return &c

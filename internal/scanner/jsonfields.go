@@ -30,6 +30,10 @@ func topLevelFields(b []byte, fn func(key, val []byte)) bool {
 			return false
 		}
 		key := b[i+1 : end-1]
+		if bytes.IndexByte(key, '\\') >= 0 {
+			// Valid JSON may escape a key, e.g. "\u0063wd" for "cwd".
+			key = []byte(jsonString(b[i:end]))
+		}
 		i = skipWS(b, end)
 		if i >= len(b) || b[i] != ':' {
 			return false

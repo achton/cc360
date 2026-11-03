@@ -536,7 +536,7 @@ func (m *Model) agent(s *db.Session) scanner.Agent {
 	if s == nil {
 		return scanner.Agent{}
 	}
-	return m.activeStates[s.SessionID]
+	return m.activeStates[AgentKey(*s)]
 }
 
 // openArgs returns the claude arguments that open s. A running background job

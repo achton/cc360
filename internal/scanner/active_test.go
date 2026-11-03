@@ -120,3 +120,14 @@ func TestParseAgentsTiePrefersBackground(t *testing.T) {
 		}
 	}
 }
+
+// A session ID is unique only within a home, so each home's agents keep their
+// own key. Merging them could attach to a job of the wrong config.
+func TestAgentKeyIsPerHome(t *testing.T) {
+	if AgentKey("/a", "s1") == AgentKey("/b", "s1") {
+		t.Error("the same session ID in two homes must not share a key")
+	}
+	if AgentKey("/a/", "s1") != AgentKey("/a", "s1") {
+		t.Error("the home must be compared cleaned")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
 )
@@ -386,6 +387,11 @@ func relativeDate(t time.Time) string {
 }
 
 // buildRows converts sessions into pre-formatted table rows.
+// AgentKey is the key of s in the map from scanner.ActiveSessions.
+func AgentKey(s db.Session) string {
+	return scanner.AgentKey(config.ClaudeHome(s.ClaudeDir), s.SessionID)
+}
+
 func buildRows(sessions []db.Session, width int, cols []column, activeStates map[string]scanner.Agent) [][]string {
 	showBranch := width >= 90
 	showMsgs := width >= 100
@@ -397,7 +403,7 @@ func buildRows(sessions []db.Session, width int, cols []column, activeStates map
 			ts = s.Created
 		}
 		date := relativeDate(ts)
-		if dot := activeDot(activeStates[s.SessionID].State); dot != "" {
+		if dot := activeDot(activeStates[AgentKey(s)].State); dot != "" {
 			date += " " + dot
 		}
 
