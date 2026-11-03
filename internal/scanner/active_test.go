@@ -15,6 +15,29 @@ func TestParseAgents(t *testing.T) {
 			want: map[string]ActiveState{"aaa": StateBusy, "bbb": StateIdle},
 		},
 		{
+			name: "waiting on the user",
+			in:   `[{"pid":1,"kind":"interactive","sessionId":"aaa","status":"waiting","waitingFor":"permission"}]`,
+			want: map[string]ActiveState{"aaa": StateWaiting},
+		},
+		{
+			name: "background job without a process uses its state",
+			in: `[{"id":"j1","kind":"background","sessionId":"aaa","state":"blocked"},
+			      {"id":"j2","kind":"background","sessionId":"bbb","state":"working"}]`,
+			want: map[string]ActiveState{"aaa": StateWaiting, "bbb": StateBusy},
+		},
+		{
+			name: "process status wins over job state",
+			in:   `[{"id":"j1","pid":3,"kind":"background","sessionId":"aaa","status":"idle","state":"working"}]`,
+			want: map[string]ActiveState{"aaa": StateIdle},
+		},
+		{
+			name: "finished background jobs are not running",
+			in: `[{"kind":"background","sessionId":"aaa","state":"done"},
+			      {"kind":"background","sessionId":"bbb","state":"failed"},
+			      {"kind":"background","sessionId":"ccc","state":"stopped"}]`,
+			want: map[string]ActiveState{},
+		},
+		{
 			name: "no sessions running",
 			in:   `[]`,
 			want: map[string]ActiveState{},
@@ -41,7 +64,7 @@ func TestParseAgents(t *testing.T) {
 		},
 		{
 			name: "busy wins regardless of order",
-			in:   `[{"sessionId":"aaa","status":"busy"},{"sessionId":"aaa","status":"idle"}]`,
+			in:   `[{"sessionId":"aaa","status":"busy"},{"sessionId":"aaa","status":"waiting"}]`,
 			want: map[string]ActiveState{"aaa": StateBusy},
 		},
 		{name: "malformed json yields nothing", in: `not json`, want: nil},
@@ -55,18 +78,33 @@ func TestParseAgents(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 			for id, state := range tt.want {
-				if got[id] != state {
-					t.Errorf("state[%q] = %v, want %v", id, got[id], state)
+				if got[id].State != state {
+					t.Errorf("state[%q] = %v, want %v", id, got[id].State, state)
 				}
 			}
 		})
 	}
 }
 
+func TestParseAgentsDetails(t *testing.T) {
+	got := parseAgents([]byte(`[
+		{"id":"job1","pid":7,"kind":"background","sessionId":"bg","name":"nightly","status":"waiting","waitingFor":"permission"},
+		{"id":"ignored","pid":8,"kind":"interactive","sessionId":"fg","status":"waiting","waitingFor":{"agents":[]}}]`))
+
+	bg := got["bg"]
+	if !bg.Background || bg.JobID != "job1" || bg.Name != "nightly" || bg.WaitingFor != "permission" || bg.PID != 7 {
+		t.Errorf("background agent = %+v", bg)
+	}
+	fg := got["fg"]
+	if fg.Background || fg.JobID != "" || fg.WaitingFor != "" {
+		t.Errorf("interactive agent = %+v, want no job id and the non-string waitingFor ignored", fg)
+	}
+}
+
 // A session that is not running must read as StateNone via the zero value.
 func TestParseAgentsAbsentIsStateNone(t *testing.T) {
-	states := parseAgents([]byte(`[{"sessionId":"aaa","status":"busy"}]`))
-	if states["not-running"] != StateNone {
-		t.Errorf("absent session = %v, want StateNone", states["not-running"])
+	agents := parseAgents([]byte(`[{"sessionId":"aaa","status":"busy"}]`))
+	if agents["not-running"].State != StateNone {
+		t.Errorf("absent session = %v, want StateNone", agents["not-running"].State)
 	}
 }

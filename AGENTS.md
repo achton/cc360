@@ -34,7 +34,7 @@ Disk scan → SQLite cache → TUI
 
 ### Concurrency
 
-Active session detection polls `claude agents --json` every 15 seconds via `activeTickMsg`, which reports each running session's real ID and a busy/idle status. That replaced per-platform process scanning, which could only infer the ID by matching a process CWD against the most recently modified session in that directory. One query runs per Claude home, concurrently, from a `tea.Cmd` so the UI loop never waits on it. Any failure returns no results, so the indicators go quiet rather than breaking the table. Skipped entirely when `show_active = false`.
+Active session detection polls `claude agents --json` every 15 seconds via `activeTickMsg`, which reports each running session's real ID, its status (`busy`, `waiting` with a `waitingFor` reason, `idle`), and for a `claude --bg` job its kind, job `id` and lifecycle `state`. A job without a process has only `state` (`working`, `blocked`, or finished). `scanner.Agent` keeps the most urgent state per session. Enter attaches to a background job with `claude attach <id>` and refuses an interactive session running elsewhere. That replaced per-platform process scanning, which could only infer the ID by matching a process CWD against the most recently modified session in that directory. One query runs per Claude home, concurrently, from a `tea.Cmd` so the UI loop never waits on it. Any failure returns no results, so the indicators go quiet rather than breaking the table. Skipped entirely when `show_active = false`.
 
 ### Styling
 

@@ -46,7 +46,8 @@ hide_sidechains = true
 sort_by = "modified"
 
 # Mark sessions that are currently running: a filled dot when Claude is
-# working, a hollow one when it is waiting. Polls "claude agents" every 15s.
+# working, a diamond when it needs input, a hollow dot when it is idle.
+# Polls "claude agents" every 15s.
 show_active = true
 `
 

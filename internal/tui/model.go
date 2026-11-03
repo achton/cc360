@@ -25,7 +25,7 @@ type Model struct {
 	allSessions     []db.Session // full unfiltered list
 	sessions        []db.Session // currently displayed (filtered)
 	scannerSessions []scanner.Session
-	activeStates    map[string]scanner.ActiveState
+	activeStates    map[string]scanner.Agent
 	table           sessionTable
 	detail          detailPane
 	filter          filterInput
@@ -43,7 +43,7 @@ type execFinishedMsg struct{ err error }
 type activeTickMsg struct{}
 
 type activeResultMsg struct {
-	states map[string]scanner.ActiveState
+	states map[string]scanner.Agent
 }
 
 type reloadResultMsg struct {
@@ -62,7 +62,7 @@ func activeTickCmd() tea.Cmd {
 }
 
 // New creates the initial TUI model.
-func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeStates map[string]scanner.ActiveState) Model {
+func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeStates map[string]scanner.Agent) Model {
 	return Model{
 		db:              database,
 		cfg:             cfg,
@@ -396,7 +396,7 @@ func (m Model) View() tea.View {
 	var detail string
 	if m.detail.visible {
 		s := m.selectedSession()
-		detail = "\n" + m.detail.view(s, m.width, m.activeState(s))
+		detail = "\n" + m.detail.view(s, m.width, m.agent(s))
 	}
 
 	statusText := m.statusMsg
@@ -456,7 +456,7 @@ func (m Model) tableHeight() int {
 	h := m.height - 3
 	if m.detail.visible {
 		// detail pane rendered height includes border
-		h -= lipgloss.Height(m.detail.view(m.selectedSession(), m.width, scanner.StateNone))
+		h -= lipgloss.Height(m.detail.view(m.selectedSession(), m.width, scanner.Agent{}))
 	}
 	if m.filter.visible() {
 		h -= lipgloss.Height(m.filter.view(m.width))
@@ -475,11 +475,53 @@ func (m *Model) selectedSession() *db.Session {
 	return nil
 }
 
-func (m *Model) activeState(s *db.Session) scanner.ActiveState {
+func (m *Model) agent(s *db.Session) scanner.Agent {
 	if s == nil {
-		return scanner.StateNone
+		return scanner.Agent{}
 	}
 	return m.activeStates[s.SessionID]
+}
+
+// openArgs returns the claude arguments that open s. A running background job
+// is attached to; an interactive session running in another terminal cannot
+// be taken over, so that returns a reason instead.
+func openArgs(s *db.Session, a scanner.Agent) ([]string, string) {
+	switch {
+	case a.State == scanner.StateNone:
+		return []string{"--resume", s.SessionID}, ""
+	case a.Background && a.JobID != "" && isValidSessionID(a.JobID):
+		return []string{"attach", a.JobID}, ""
+	case a.Background:
+		// Since Claude Code 2.1.285 --resume opens a running background session.
+		return []string{"--resume", s.SessionID}, ""
+	case a.PID > 0:
+		return nil, fmt.Sprintf("Session is running in another terminal (pid %d)", a.PID)
+	default:
+		return nil, "Session is running in another terminal"
+	}
+}
+
+// openableSession returns the selected session and the arguments that open
+// it, or sets the status line and returns nil.
+func (m *Model) openableSession() (*db.Session, []string) {
+	s := m.selectedSession()
+	if s == nil {
+		m.statusMsg = "No session selected"
+		return nil, nil
+	}
+	args, reason := openArgs(s, m.agent(s))
+	if reason != "" {
+		m.statusMsg = reason
+		return nil, nil
+	}
+	if !m.checkProjectPath(s) {
+		return nil, nil
+	}
+	if !isValidSessionID(s.SessionID) {
+		m.statusMsg = "Invalid session ID"
+		return nil, nil
+	}
+	return s, args
 }
 
 // pollActiveCmd queries running sessions off the UI loop. Each query spawns a
@@ -548,23 +590,11 @@ func (m *Model) checkProjectPath(s *db.Session) bool {
 }
 
 func (m *Model) resumeSession() tea.Cmd {
-	s := m.selectedSession()
+	s, args := m.openableSession()
 	if s == nil {
-		m.statusMsg = "No session selected"
 		return nil
 	}
-	if m.activeState(s) != scanner.StateNone {
-		m.statusMsg = "Session is currently active"
-		return nil
-	}
-	if !m.checkProjectPath(s) {
-		return nil
-	}
-	if !isValidSessionID(s.SessionID) {
-		m.statusMsg = "Invalid session ID"
-		return nil
-	}
-	c := exec.Command("claude", "--resume", s.SessionID)
+	c := exec.Command("claude", args...)
 	c.Dir = s.ProjectPath
 	// Pin the session's config dir. claude only resumes sessions of the config
 	// it runs under.
@@ -629,32 +659,28 @@ func overlayCenter(base, overlay string, width, height int) string {
 	return sb.String()
 }
 
-// resumeShellCommand builds the clipboard one-liner. The prefix must sit on
-// the claude call, not the cd, or the env never reaches the right command.
-func resumeShellCommand(s *db.Session) string {
+// shellCommand builds the clipboard one-liner. The prefix must sit on the
+// claude call, not the cd, or the env never reaches the right command.
+func shellCommand(s *db.Session, args []string) string {
 	prefix := config.ClaudeEnvPrefix(config.ClaudeHome(s.ClaudeDir), shellQuote)
-	return fmt.Sprintf("cd %s && %sclaude --resume %s",
-		shellQuote(s.ProjectPath), prefix, shellQuote(s.SessionID))
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = a
+		if strings.HasPrefix(a, "-") || a == "attach" {
+			continue
+		}
+		quoted[i] = shellQuote(a)
+	}
+	return fmt.Sprintf("cd %s && %sclaude %s",
+		shellQuote(s.ProjectPath), prefix, strings.Join(quoted, " "))
 }
 
 func (m *Model) copyResumeCommand() {
-	s := m.selectedSession()
+	s, args := m.openableSession()
 	if s == nil {
-		m.statusMsg = "No session selected"
 		return
 	}
-	if m.activeState(s) != scanner.StateNone {
-		m.statusMsg = "Session is currently active"
-		return
-	}
-	if !m.checkProjectPath(s) {
-		return
-	}
-	if !isValidSessionID(s.SessionID) {
-		m.statusMsg = "Invalid session ID"
-		return
-	}
-	encoded := base64.StdEncoding.EncodeToString([]byte(resumeShellCommand(s)))
+	encoded := base64.StdEncoding.EncodeToString([]byte(shellCommand(s, args)))
 	fmt.Fprintf(os.Stderr, "\033]52;c;%s\007", encoded)
-	m.statusMsg = "Copied resume command to clipboard"
+	m.statusMsg = "Copied command to clipboard"
 }

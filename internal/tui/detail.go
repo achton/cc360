@@ -47,7 +47,7 @@ func (d *detailPane) toggle() {
 
 // view renders the detail pane. Its height is fixed, so every line is cut to
 // the content width. A wider line wraps and grows the pane.
-func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) string {
+func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string {
 	if s == nil {
 		return d.empty(width)
 	}
@@ -55,12 +55,8 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	inner := detailInnerWidth(width)
 	var lines []string
 
-	// Active indicator
-	switch active {
-	case scanner.StateBusy:
-		lines = append(lines, detailActiveStyle.Render("● ACTIVE SESSION"))
-	case scanner.StateIdle:
-		lines = append(lines, idleStyle.Render("○ IDLE SESSION"))
+	if line := agentLine(agent); line != "" {
+		lines = append(lines, ansi.Truncate(line, inner, "…"))
 	}
 
 	// Title (bold, prominent) or folder if no title
@@ -126,6 +122,35 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 
 	content := strings.Join(lines, "\n")
 	return detailBorderStyle.Width(width).Render(content)
+}
+
+// agentLine describes a running session in one line, or "" when it is not.
+func agentLine(a scanner.Agent) string {
+	var head string
+	switch a.State {
+	case scanner.StateBusy:
+		head = detailActiveStyle.Render("● WORKING")
+	case scanner.StateWaiting:
+		head = waitingStyle.Render("◆ NEEDS INPUT")
+		if a.WaitingFor != "" {
+			head += waitingStyle.Render(": " + sanitize(a.WaitingFor))
+		}
+	case scanner.StateIdle:
+		head = idleStyle.Render("○ IDLE")
+	default:
+		return ""
+	}
+	var extra []string
+	if a.Background {
+		extra = append(extra, "background")
+	}
+	if a.Name != "" {
+		extra = append(extra, sanitize(a.Name))
+	}
+	if len(extra) > 0 {
+		head += detailMetaStyle.Render("  " + strings.Join(extra, " · "))
+	}
+	return head
 }
 
 // Lip Gloss v2 counts the border and the padding inside Width.

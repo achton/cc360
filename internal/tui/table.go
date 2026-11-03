@@ -40,7 +40,7 @@ type column struct {
 type sessionTable struct {
 	columns      []column
 	rows         [][]string
-	activeStates map[string]scanner.ActiveState
+	activeStates map[string]scanner.Agent
 	sessionInfo  string // e.g. "42 sessions" — shown on the indicator line
 	cursor       int
 	offset       int // first visible row index
@@ -48,7 +48,7 @@ type sessionTable struct {
 	width        int
 }
 
-func newSessionTable(sessions []db.Session, width, availHeight int, activeStates map[string]scanner.ActiveState) sessionTable {
+func newSessionTable(sessions []db.Session, width, availHeight int, activeStates map[string]scanner.Agent) sessionTable {
 	t := sessionTable{width: width, activeStates: activeStates}
 	t.columns = buildColumns(width)
 	t.rows = buildRows(sessions, width, t.columns, activeStates)
@@ -383,7 +383,7 @@ func relativeDate(t time.Time) string {
 }
 
 // buildRows converts sessions into pre-formatted table rows.
-func buildRows(sessions []db.Session, width int, cols []column, activeStates map[string]scanner.ActiveState) [][]string {
+func buildRows(sessions []db.Session, width int, cols []column, activeStates map[string]scanner.Agent) [][]string {
 	showBranch := width >= 90
 	showMsgs := width >= 100
 
@@ -394,11 +394,8 @@ func buildRows(sessions []db.Session, width int, cols []column, activeStates map
 			ts = s.Created
 		}
 		date := relativeDate(ts)
-		switch activeStates[s.SessionID] {
-		case scanner.StateBusy:
-			date += " " + activeStyle.Render("●")
-		case scanner.StateIdle:
-			date += " " + idleStyle.Render("○")
+		if dot := activeDot(activeStates[s.SessionID].State); dot != "" {
+			date += " " + dot
 		}
 
 		title := firstNonEmpty(displayTitle(s), sanitize(s.ProjectName))
@@ -432,6 +429,19 @@ func displayTitle(s db.Session) string {
 		sanitize(s.ExistingSummary),
 		sanitize(s.FirstPrompt),
 	)
+}
+
+// activeDot marks a running session: working, waiting on the user, or idle.
+func activeDot(state scanner.ActiveState) string {
+	switch state {
+	case scanner.StateBusy:
+		return activeStyle.Render("●")
+	case scanner.StateWaiting:
+		return waitingStyle.Render("◆")
+	case scanner.StateIdle:
+		return idleStyle.Render("○")
+	}
+	return ""
 }
 
 func firstNonEmpty(vals ...string) string {
