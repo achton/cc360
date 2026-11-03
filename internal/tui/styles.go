@@ -75,7 +75,12 @@ var (
 	activeStyle = lipgloss.NewStyle().
 			Foreground(colorGreen)
 
-	// Idle session indicator (running, waiting for input)
+	// Session blocked on the user: a permission prompt or a question
+	waitingStyle = lipgloss.NewStyle().
+			Foreground(colorPeach).
+			Bold(true)
+
+	// Idle session indicator (running, ready for the next prompt)
 	idleStyle = lipgloss.NewStyle().
 			Foreground(colorSubtext0)
 

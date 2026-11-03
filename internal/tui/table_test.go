@@ -211,7 +211,7 @@ func TestDateColumnFitsActiveIndicator(t *testing.T) {
 		time.Date(2020, 1, 2, 3, 4, 0, 0, time.UTC),
 	} {
 		date := relativeDate(when)
-		for _, dot := range []string{"●", "○"} {
+		for _, dot := range []string{"●", "◆", "○"} {
 			raw := date + " " + dot
 			if lipgloss.Width(raw) > dateW {
 				t.Errorf("%q needs %d columns, date column is %d", raw, lipgloss.Width(raw), dateW)

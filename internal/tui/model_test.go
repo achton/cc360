@@ -266,8 +266,8 @@ func TestResumeShellCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &db.Session{SessionID: "abc", ProjectPath: "/home/u/proj", ClaudeDir: tt.claudeDir}
-			if got := resumeShellCommand(s); got != tt.want {
-				t.Errorf("resumeShellCommand() = %q, want %q", got, tt.want)
+			if got := shellCommand(s, []string{"--resume", s.SessionID}); got != tt.want {
+				t.Errorf("shellCommand() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -301,12 +301,12 @@ func TestActiveResultAppliesStates(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(Model)
 
-	want := map[string]scanner.ActiveState{m.sessions[0].SessionID: scanner.StateBusy}
+	want := map[string]scanner.Agent{m.sessions[0].SessionID: {State: scanner.StateBusy}}
 	updated, cmd := m.Update(activeResultMsg{states: want})
 	if cmd == nil {
 		t.Error("no command returned, so the poll loop stopped")
 	}
-	if got := updated.(Model).activeStates[m.sessions[0].SessionID]; got != scanner.StateBusy {
+	if got := updated.(Model).activeStates[m.sessions[0].SessionID].State; got != scanner.StateBusy {
 		t.Errorf("state = %v, want StateBusy", got)
 	}
 }
@@ -342,7 +342,7 @@ func TestDetailPaneKeepsItsSize(t *testing.T) {
 
 	for _, width := range []int{40, 80, 120} {
 		for _, s := range []*db.Session{nil, long} {
-			out := d.view(s, width, scanner.StateBusy)
+			out := d.view(s, width, scanner.Agent{State: scanner.StateWaiting, WaitingFor: strings.Repeat("why ", 50), Background: true, Name: "named"})
 			if got := lipgloss.Width(out); got != width {
 				t.Errorf("width %d: rendered %d columns", width, got)
 			}
@@ -399,5 +399,40 @@ func TestFilterArrowsMoveTheTable(t *testing.T) {
 	updated, _ = m.Update(keyCode(tea.KeyUp))
 	if got := updated.(*Model).table.Cursor(); got != 0 {
 		t.Errorf("up moved the cursor to %d, want 0", got)
+	}
+}
+
+func TestOpenArgs(t *testing.T) {
+	s := &db.Session{SessionID: "abc-123"}
+	tests := []struct {
+		name   string
+		agent  scanner.Agent
+		want   string
+		reason bool
+	}{
+		{"not running resumes", scanner.Agent{}, "--resume abc-123", false},
+		{"background job attaches", scanner.Agent{State: scanner.StateWaiting, Background: true, JobID: "job1"}, "attach job1", false},
+		{"background without a job id resumes", scanner.Agent{State: scanner.StateBusy, Background: true}, "--resume abc-123", false},
+		{"unsafe job id falls back to resume", scanner.Agent{State: scanner.StateBusy, Background: true, JobID: "x; rm"}, "--resume abc-123", false},
+		{"interactive elsewhere is refused", scanner.Agent{State: scanner.StateIdle, PID: 42}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args, reason := openArgs(s, tt.agent)
+			if (reason != "") != tt.reason {
+				t.Fatalf("reason = %q, want refused=%v", reason, tt.reason)
+			}
+			if got := strings.Join(args, " "); got != tt.want {
+				t.Errorf("args = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShellCommandAttach(t *testing.T) {
+	s := &db.Session{SessionID: "abc", ProjectPath: "/p", ClaudeDir: "/h/projects/x"}
+	want := `cd '/p' && CLAUDE_CONFIG_DIR='/h' claude attach 'job1'`
+	if got := shellCommand(s, []string{"attach", "job1"}); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
