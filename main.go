@@ -93,9 +93,9 @@ func runDemo() {
 	sessions := demo.Sessions()
 	// Show every indicator state.
 	activeStates := map[string]scanner.Agent{
-		sessions[0].SessionID: {State: scanner.StateBusy},
-		sessions[1].SessionID: {State: scanner.StateWaiting, WaitingFor: "permission", Background: true, JobID: "a1b2c3d4"},
-		sessions[2].SessionID: {State: scanner.StateIdle},
+		tui.AgentKey(sessions[0]): {State: scanner.StateBusy},
+		tui.AgentKey(sessions[1]): {State: scanner.StateWaiting, WaitingFor: "permission", Background: true, JobID: "a1b2c3d4"},
+		tui.AgentKey(sessions[2]): {State: scanner.StateIdle},
 	}
 	m := tui.New(nil, cfg, sessions, activeStates)
 	p := tea.NewProgram(m)

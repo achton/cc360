@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -47,7 +48,14 @@ type agentEntry struct {
 
 const activeLookupTimeout = 5 * time.Second
 
-// ActiveSessions maps the session IDs of running sessions to what they are
+// AgentKey keys the result of ActiveSessions. A session ID is unique only
+// within its Claude home, and a job can only be attached to from the home
+// that reports it.
+func AgentKey(home, sessionID string) string {
+	return filepath.Clean(home) + "\x00" + sessionID
+}
+
+// ActiveSessions maps running sessions, by AgentKey, to what they are
 // doing. It asks Claude Code directly via `claude agents --json`, which reports
 // the real session ID; inferring it from process arguments could only ever be a
 // guess for sessions that were not started with --resume.
@@ -69,9 +77,9 @@ func ActiveSessions(homes []string) map[string]Agent {
 	wg.Wait()
 
 	agents := make(map[string]Agent)
-	for _, m := range perHome {
+	for i, m := range perHome {
 		for id, a := range m {
-			upsertAgent(agents, id, a)
+			agents[AgentKey(homes[i], id)] = a
 		}
 	}
 	if len(agents) == 0 {
@@ -93,9 +101,9 @@ func agentsForHome(home string) map[string]Agent {
 	return parseAgents(out)
 }
 
-// upsertAgent records a session, keeping the more urgent state. One session
-// can be reported twice, both within a home and across two of them. On a tie
-// a background job wins, because only that can be attached to.
+// upsertAgent records a session, keeping the more urgent state. One home can
+// report a session twice. On a tie a background job wins, because only that
+// can be attached to.
 func upsertAgent(agents map[string]Agent, id string, a Agent) {
 	if prev, ok := agents[id]; ok {
 		if prev.State > a.State || (prev.State == a.State && (prev.Background || !a.Background)) {

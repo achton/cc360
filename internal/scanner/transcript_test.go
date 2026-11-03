@@ -121,18 +121,36 @@ func TestParseCustomTitle(t *testing.T) {
 			t.Errorf("CustomTitle = %q, want bg-agent", got)
 		}
 	})
-	t.Run("sidecar wins", func(t *testing.T) {
-		path := writeJSONL(t, []string{tHead, custom, tUser})
-		dir := filepath.Join(filepath.Dir(path), "s1")
+	writeSidecar := func(t *testing.T, dir string) {
+		t.Helper()
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "custom-title.json"), []byte(`{"customTitle":"from-sidecar"}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	t.Run("sidecar wins", func(t *testing.T) {
+		path := writeJSONL(t, []string{tHead, custom, tUser})
+		writeSidecar(t, strings.TrimSuffix(path, ".jsonl"))
 		s := parseOrphanJSONL(path, []string{"/home/user"})
 		if s == nil || s.CustomTitle != "from-sidecar" {
 			t.Errorf("CustomTitle = %+v, want from-sidecar", s)
+		}
+	})
+	// The sidecar is found by the file name, so a sessionId field cannot
+	// point the read outside the project dir.
+	t.Run("sessionId does not locate the sidecar", func(t *testing.T) {
+		head := strings.Replace(tHead, `"sessionId":"s1"`, `"sessionId":"../outside"`, 1)
+		root := t.TempDir()
+		path := filepath.Join(root, "project", "s.jsonl")
+		writeSidecar(t, filepath.Join(root, "outside"))
+		writeSidecar(t, filepath.Join(root, "project", "unrelated"))
+		if err := os.WriteFile(path, []byte(strings.Join([]string{head, custom, tUser}, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if s := parseOrphanJSONL(path, []string{"/home/user"}); s == nil || s.CustomTitle != "my-name" {
+			t.Errorf("CustomTitle = %+v, want my-name", s)
 		}
 	})
 }

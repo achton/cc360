@@ -44,6 +44,18 @@ func TestTopLevelFields(t *testing.T) {
 }
 
 // decodeEntry must agree with encoding/json on the fields it reads.
+// Valid JSON may escape a key. encoding/json matches it, so the walker must too.
+func TestDecodeEntryEscapedKeys(t *testing.T) {
+	line := `{"type":"user","\u0063wd":"/home/u/p","\u0069sMeta":true}`
+	var got jsonlEntry
+	if !decodeEntry([]byte(line), &got) {
+		t.Fatal("decodeEntry failed")
+	}
+	if got.Cwd != "/home/u/p" || !got.IsMeta {
+		t.Errorf("got cwd %q, isMeta %v; want /home/u/p, true", got.Cwd, got.IsMeta)
+	}
+}
+
 func TestDecodeEntryMatchesEncodingJSON(t *testing.T) {
 	line := `{"parentUuid":"p","isSidechain":true,"type":"user","message":{"role":"user","content":"a \"quoted\" \\ é prompt"},"isMeta":false,"sessionId":"s1","cwd":"/home/u/café","gitBranch":"main","timestamp":"2026-01-01T00:00:00Z","toolUseResult":{"stdout":"{not json"}}`
 
