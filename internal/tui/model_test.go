@@ -337,6 +337,10 @@ func TestDetailPaneKeepsItsSize(t *testing.T) {
 		FirstPrompt: strings.Repeat("prompt ", 60),
 		GitBranch:   strings.Repeat("branch-", 20),
 		Modified:    time.Now(),
+		PRLinks:     []string{"owner/repo#1", strings.Repeat("org/", 30) + "repo#2"},
+		CostUSD:     12.5,
+		LinesAdded:  1000,
+		Entrypoint:  "claude-desktop",
 	}
 	d := detailPane{visible: true}
 
@@ -434,5 +438,28 @@ func TestShellCommandAttach(t *testing.T) {
 	want := `cd '/p' && CLAUDE_CONFIG_DIR='/h' claude attach 'job1'`
 	if got := shellCommand(s, []string{"attach", "job1"}); got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Wide text and an untitled session with a long folder must not grow the pane,
+// and escape sequences from the transcript must not reach the terminal.
+func TestDetailPaneHostileText(t *testing.T) {
+	wide := strings.Repeat("漢字🙂", 60)
+	cases := map[string]*db.Session{
+		"wide title":      {SessionID: "a", Title: wide, FirstPrompt: wide},
+		"untitled folder": {SessionID: "b", ProjectName: strings.Repeat("folder-", 40), ProjectPath: "/x"},
+		"escapes":         {SessionID: "c", ProjectName: "p", ProjectPath: "/tmp/\x1b]0;pwned\x07dir", GitBranch: "b\x1b[2J", Title: "t\u009b31m"},
+	}
+	d := detailPane{visible: true}
+	for name, s := range cases {
+		for _, width := range []int{40, 100} {
+			out := d.view(s, width, scanner.Agent{})
+			if got, want := lipgloss.Height(out), detailContentLines+2; got != want {
+				t.Errorf("%s at %d: %d lines, want %d", name, width, got, want)
+			}
+			if strings.Contains(out, "pwned\x07") || strings.Contains(out, "\x1b[2J") || strings.Contains(out, "\u009b") {
+				t.Errorf("%s at %d: raw control sequence in output", name, width)
+			}
+		}
 	}
 }

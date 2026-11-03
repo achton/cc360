@@ -152,6 +152,7 @@ func TestIsValidSessionID(t *testing.T) {
 		{"exactly 100 chars", strings.Repeat("a", 100), true},
 		{"with slashes", "abc/def", false},
 		{"with newline", "abc\ndef", false},
+		{"leading hyphen reads as a flag", "--dangerously-skip-permissions", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,6 +31,16 @@ type Session struct {
 	IsSidechain     bool
 	JSONLPath       string
 
+	// PRLinks lists the PRs the session touched as "owner/repo#N", oldest
+	// first. CostUSD and the line counts are the session's final totals.
+	PRLinks      []string
+	CostUSD      float64
+	LinesAdded   int
+	LinesRemoved int
+	// Entrypoint is how the session was started: cli, claude-desktop,
+	// claude-vscode, or sdk-* for `claude -p` and the Agent SDK.
+	Entrypoint string
+
 	// The transcript's size and mtime when it was parsed, so an unchanged file
 	// is not parsed again. Zero for sessions that came from the index.
 	FileSize    int64
@@ -46,7 +57,7 @@ type Session struct {
 
 // ParserVersion changes whenever parseOrphanJSONL starts reading something
 // new, so sessions cached by an older parser are parsed again.
-const ParserVersion = 1
+const ParserVersion = 2
 
 // Cache holds sessions from an earlier scan, keyed by transcript path.
 type Cache map[string]Session
@@ -83,6 +94,12 @@ type jsonlEntry struct {
 	AITitle          string
 	CustomTitle      string
 	AgentName        string
+	Entrypoint       string
+	PRNumber         int64
+	PRRepository     string
+	TotalCostUSD     float64
+	LinesAdded       int64
+	LinesRemoved     int64
 	Message          json.RawMessage
 }
 
@@ -194,6 +211,7 @@ const (
 	maxGitBranchLen   = 256
 	maxFirstPromptLen = 1000
 	maxTitleLen       = 200
+	maxPRLinks        = 20
 )
 
 // truncateField truncates a string to maxLen if it exceeds the limit.
@@ -302,6 +320,9 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		agentName      string
 		isSidechain    bool
 		msgCount       int
+		prLinks        []string
+		cost           jsonlEntry
+		entrypoint     string
 	)
 
 	lr := lineReader{r: bufio.NewReaderSize(f, 64<<10), max: maxLineLen}
@@ -334,7 +355,19 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 			lastTimestamp = entry.Timestamp
 		}
 
+		// A session started with -p and resumed interactively is interactive.
+		if entry.Entrypoint != "" && (entrypoint == "" || IsSDKEntrypoint(entrypoint)) {
+			entrypoint = entry.Entrypoint
+		}
+
 		switch entry.Type {
+		case "pr-link":
+			if entry.PRNumber > 0 && entry.PRRepository != "" {
+				prLinks = appendPRLink(prLinks, fmt.Sprintf("%s#%d", entry.PRRepository, entry.PRNumber))
+			}
+		case "cost-state":
+			// Each record holds the running totals; the last is final.
+			cost = entry
 		case "ai-title":
 			// Claude Code regenerates the title; the last one is current.
 			if entry.AITitle != "" {
@@ -385,6 +418,7 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	firstPrompt = truncateField(firstPrompt, maxFirstPromptLen)
 	aiTitle = truncateField(aiTitle, maxTitleLen)
 	customTitle = truncateField(customTitle, maxTitleLen)
+	entrypoint = truncateField(entrypoint, maxGitBranchLen)
 
 	return &Session{
 		SessionID:    sessionID,
@@ -400,7 +434,34 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 		GitBranch:    gitBranch,
 		IsSidechain:  isSidechain,
 		JSONLPath:    path,
+		PRLinks:      prLinks,
+		CostUSD:      cost.TotalCostUSD,
+		LinesAdded:   int(cost.LinesAdded),
+		LinesRemoved: int(cost.LinesRemoved),
+		Entrypoint:   entrypoint,
 	}
+}
+
+// IsSDKEntrypoint reports a programmatic session: `claude -p` or the Agent SDK.
+func IsSDKEntrypoint(e string) bool {
+	return strings.HasPrefix(e, "sdk-")
+}
+
+// appendPRLink adds a PR once, moving a repeat to the end so the last entry is
+// the most recent one. The list is capped, dropping the oldest.
+func appendPRLink(links []string, link string) []string {
+	link = truncateField(link, maxGitBranchLen)
+	for i, l := range links {
+		if l == link {
+			links = append(links[:i], links[i+1:]...)
+			break
+		}
+	}
+	links = append(links, link)
+	if len(links) > maxPRLinks {
+		links = links[len(links)-maxPRLinks:]
+	}
+	return links
 }
 
 // loadTranscript parses a transcript, or reuses the cached session when the

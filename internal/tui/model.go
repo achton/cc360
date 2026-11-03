@@ -308,7 +308,8 @@ func (m *Model) applyFilters() {
 		for _, s := range result {
 			text := strings.ToLower(s.ProjectName + " " + s.ParentProjectName +
 				" " + s.WorktreeName + " " + s.CustomTitle + " " + s.Title +
-				" " + s.FirstPrompt + " " + s.GitBranch + " " + s.ExistingSummary)
+				" " + s.FirstPrompt + " " + s.GitBranch + " " + s.ExistingSummary +
+				" " + strings.Join(s.PRLinks, " "))
 			if strings.Contains(text, query) {
 				filtered = append(filtered, s)
 			}

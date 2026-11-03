@@ -34,7 +34,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 	custom_title    TEXT,
 	jsonl_size      INTEGER,
 	jsonl_mtime     INTEGER,
-	parser_version  INTEGER
+	parser_version  INTEGER,
+	pr_links        TEXT,
+	cost_usd        REAL,
+	lines_added     INTEGER,
+	lines_removed   INTEGER,
+	entrypoint      TEXT
 );
 `
 
@@ -49,6 +54,11 @@ var addedColumns = []struct{ name, decl string }{
 	{"jsonl_size", "INTEGER"},
 	{"jsonl_mtime", "INTEGER"},
 	{"parser_version", "INTEGER"},
+	{"pr_links", "TEXT"},
+	{"cost_usd", "REAL"},
+	{"lines_added", "INTEGER"},
+	{"lines_removed", "INTEGER"},
+	{"entrypoint", "TEXT"},
 }
 
 // sessionColumns is listed explicitly so databases created by older versions,
@@ -56,7 +66,8 @@ var addedColumns = []struct{ name, decl string }{
 const sessionColumns = `session_id, project_name, project_path, claude_dir,
 	first_prompt, existing_summary, title, message_count, created, modified,
 	git_branch, is_sidechain, jsonl_path, last_scanned,
-	is_worktree, parent_project_name, worktree_name, custom_title`
+	is_worktree, parent_project_name, worktree_name, custom_title,
+	pr_links, cost_usd, lines_added, lines_removed, entrypoint`
 
 // Session is the DB representation, extending scanner.Session with the cached title.
 type Session struct {
@@ -79,6 +90,12 @@ type Session struct {
 	IsWorktree        bool
 	ParentProjectName string
 	WorktreeName      string
+
+	PRLinks      []string // "owner/repo#N", oldest first
+	CostUSD      float64
+	LinesAdded   int
+	LinesRemoved int
+	Entrypoint   string
 }
 
 type DB struct {
@@ -220,8 +237,9 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			 first_prompt, existing_summary, title, message_count, created, modified,
 			 git_branch, is_sidechain, jsonl_path, last_scanned,
 			 is_worktree, parent_project_name, worktree_name, custom_title,
-			 jsonl_size, jsonl_mtime, parser_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 jsonl_size, jsonl_mtime, parser_version,
+			 pr_links, cost_usd, lines_added, lines_removed, entrypoint)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
@@ -246,7 +264,12 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			worktree_name = COALESCE(excluded.worktree_name, sessions.worktree_name),
 			jsonl_size = excluded.jsonl_size,
 			jsonl_mtime = excluded.jsonl_mtime,
-			parser_version = excluded.parser_version
+			parser_version = excluded.parser_version,
+			pr_links = excluded.pr_links,
+			cost_usd = excluded.cost_usd,
+			lines_added = excluded.lines_added,
+			lines_removed = excluded.lines_removed,
+			entrypoint = excluded.entrypoint
 	`)
 	if err != nil {
 		return err
@@ -263,6 +286,7 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			s.GitBranch, boolToInt(s.IsSidechain), s.JSONLPath, now,
 			wtIsWorktree, wtParentName, wtName, s.CustomTitle,
 			size, mtime, version,
+			strings.Join(s.PRLinks, " "), s.CostUSD, s.LinesAdded, s.LinesRemoved, s.Entrypoint,
 		)
 		if err != nil {
 			return fmt.Errorf("upserting session %s: %w", s.SessionID, err)
@@ -312,7 +336,7 @@ func (db *DB) Search(query string) ([]Session, error) {
 		`SELECT `+sessionColumns+` FROM sessions WHERE
 			project_name LIKE ?1 OR title LIKE ?1 OR custom_title LIKE ?1
 			OR first_prompt LIKE ?1 OR git_branch LIKE ?1 OR existing_summary LIKE ?1
-			OR parent_project_name LIKE ?1 OR worktree_name LIKE ?1
+			OR parent_project_name LIKE ?1 OR worktree_name LIKE ?1 OR pr_links LIKE ?1
 		ORDER BY modified DESC`,
 		like,
 	)
@@ -414,7 +438,8 @@ func (db *DB) ScanCache(parserVersion int) (scanner.Cache, error) {
 	rows, err := db.conn.Query(`
 		SELECT session_id, project_path, first_prompt, existing_summary, title,
 		       custom_title, message_count, created, modified, git_branch,
-		       is_sidechain, jsonl_path, jsonl_size, jsonl_mtime
+		       is_sidechain, jsonl_path, jsonl_size, jsonl_mtime,
+		       pr_links, cost_usd, lines_added, lines_removed, entrypoint
 		FROM sessions
 		WHERE parser_version = ? AND COALESCE(jsonl_path, '') <> ''`, parserVersion)
 	if err != nil {
@@ -430,10 +455,12 @@ func (db *DB) ScanCache(parserVersion int) (scanner.Cache, error) {
 			title, customTitle, created, modified, branch sql.NullString
 			messageCount                                  sql.NullInt64
 			isSidechain                                   int
+			m                                             metadata
 		)
 		if err := rows.Scan(&s.SessionID, &projectPath, &firstPrompt, &existingSummary, &title,
 			&customTitle, &messageCount, &created, &modified, &branch,
-			&isSidechain, &s.JSONLPath, &s.FileSize, &s.FileModNano); err != nil {
+			&isSidechain, &s.JSONLPath, &s.FileSize, &s.FileModNano,
+			&m.prLinks, &m.cost, &m.added, &m.removed, &m.entrypoint); err != nil {
 			return nil, fmt.Errorf("scanning cache row: %w", err)
 		}
 		s.ProjectPath = projectPath.String
@@ -446,9 +473,21 @@ func (db *DB) ScanCache(parserVersion int) (scanner.Cache, error) {
 		s.Modified = parseTime(modified.String)
 		s.GitBranch = branch.String
 		s.IsSidechain = isSidechain != 0
+		s.PRLinks, s.CostUSD, s.LinesAdded, s.LinesRemoved, s.Entrypoint = m.values()
 		cache[s.JSONLPath] = s
 	}
 	return cache, rows.Err()
+}
+
+// metadata holds the nullable session metadata columns while a row is scanned.
+type metadata struct {
+	prLinks, entrypoint sql.NullString
+	cost                sql.NullFloat64
+	added, removed      sql.NullInt64
+}
+
+func (m metadata) values() (prLinks []string, cost float64, added, removed int, entrypoint string) {
+	return strings.Fields(m.prLinks.String), m.cost.Float64, int(m.added.Int64), int(m.removed.Int64), m.entrypoint.String
 }
 
 // Close closes the database connection.
@@ -482,6 +521,7 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 			parentProjectName sql.NullString
 			worktreeName      sql.NullString
 			customTitle       sql.NullString
+			m                 metadata
 		)
 		err := rows.Scan(
 			&s.SessionID, &s.ProjectName, &projectPath, &s.ClaudeDir,
@@ -489,6 +529,7 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 			&messageCount, &created, &modified,
 			&gitBranch, &isSidechain, &jsonlPath, &lastScanned,
 			&isWorktree, &parentProjectName, &worktreeName, &customTitle,
+			&m.prLinks, &m.cost, &m.added, &m.removed, &m.entrypoint,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -508,6 +549,7 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 		s.ParentProjectName = parentProjectName.String
 		s.WorktreeName = worktreeName.String
 		s.CustomTitle = customTitle.String
+		s.PRLinks, s.CostUSD, s.LinesAdded, s.LinesRemoved, s.Entrypoint = m.values()
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()

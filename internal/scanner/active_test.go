@@ -108,3 +108,15 @@ func TestParseAgentsAbsentIsStateNone(t *testing.T) {
 		t.Errorf("absent session = %v, want StateNone", agents["not-running"].State)
 	}
 }
+
+// A tie goes to the background job, since only that can be attached to.
+func TestParseAgentsTiePrefersBackground(t *testing.T) {
+	for _, in := range []string{
+		`[{"pid":1,"kind":"interactive","sessionId":"s","status":"idle"},{"id":"j","kind":"background","sessionId":"s","status":"idle"}]`,
+		`[{"id":"j","kind":"background","sessionId":"s","status":"idle"},{"pid":1,"kind":"interactive","sessionId":"s","status":"idle"}]`,
+	} {
+		if a := parseAgents([]byte(in))["s"]; !a.Background || a.JobID != "j" {
+			t.Errorf("%s: got %+v, want the background job", in, a)
+		}
+	}
+}

@@ -487,3 +487,30 @@ func TestScanCacheRoundTrip(t *testing.T) {
 		t.Errorf("another parser version must not reuse the cache, got %d entries", len(other))
 	}
 }
+
+func TestMetadataRoundTrip(t *testing.T) {
+	db := testDB(t)
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "m", ProjectName: "p", ClaudeDir: "/c", JSONLPath: "/c/m.jsonl", FileSize: 1, FileModNano: 1,
+		PRLinks: []string{"o/a#1", "o/b#2"}, CostUSD: 1.5, LinesAdded: 10, LinesRemoved: 2, Entrypoint: "claude-desktop",
+	}})
+
+	all, _ := db.AllSessions("modified", true)
+	cache, _ := db.ScanCache(scanner.ParserVersion)
+	for name, got := range map[string]struct {
+		links      []string
+		cost       float64
+		added, rem int
+		entrypoint string
+	}{
+		"query": {all[0].PRLinks, all[0].CostUSD, all[0].LinesAdded, all[0].LinesRemoved, all[0].Entrypoint},
+		"cache": {cache["/c/m.jsonl"].PRLinks, cache["/c/m.jsonl"].CostUSD, cache["/c/m.jsonl"].LinesAdded, cache["/c/m.jsonl"].LinesRemoved, cache["/c/m.jsonl"].Entrypoint},
+	} {
+		if len(got.links) != 2 || got.links[1] != "o/b#2" || got.cost != 1.5 || got.added != 10 || got.rem != 2 || got.entrypoint != "claude-desktop" {
+			t.Errorf("%s: got %+v", name, got)
+		}
+	}
+	if res, _ := db.Search("o/b#2"); len(res) != 1 {
+		t.Errorf("Search by PR hits = %d, want 1", len(res))
+	}
+}
