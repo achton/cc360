@@ -493,7 +493,7 @@ func (m Model) renderHelp() string {
 		{"q", "quit"},
 	}
 	if m.update.Version != "" {
-		pairs = append(pairs[:len(pairs)-1], struct{ key, desc string }{"u", "upgrade"}, pairs[len(pairs)-1])
+		pairs = append(pairs[:1], append([]struct{ key, desc string }{{"u", "upgrade"}}, pairs[1:]...)...)
 	}
 	sep := helpSepStyle.Render(" · ")
 	var s string
@@ -503,6 +503,8 @@ func (m Model) renderHelp() string {
 		}
 		s += helpKeyStyle.Render(p.key) + " " + helpDescStyle.Render(p.desc)
 	}
+	// A wrapped help bar would break the height budget, which reserves one line.
+	s = ansi.Truncate(s, m.width-helpStyle.GetHorizontalFrameSize(), "…")
 	return helpStyle.Width(m.width).Render(s)
 }
 

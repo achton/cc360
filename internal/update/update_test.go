@@ -127,6 +127,19 @@ func TestNewerSurvivesFailures(t *testing.T) {
 	}
 }
 
+// The version is pasted into a shell command, so a tag with anything beyond
+// MAJOR.MINOR.PATCH is refused.
+func TestNewerRefusesOddTags(t *testing.T) {
+	for _, tag := range []string{"v1.2.3-$(id)", "v1.2.3+`id`", "v1.2.3-rc1"} {
+		srv, _ := fakeGitHub(t, tag, http.StatusOK)
+		now := time.Now()
+		c := testChecker(srv.URL, &now, t.TempDir())
+		if rel, ok := c.Newer(context.Background(), "0.9.0"); ok {
+			t.Errorf("tag %q: got %+v, want no update", tag, rel)
+		}
+	}
+}
+
 func TestCommand(t *testing.T) {
 	files := map[string]bool{}
 	env := installEnv{
@@ -150,9 +163,9 @@ func TestCommand(t *testing.T) {
 		{"rpm", "/usr/bin/cc360", nil,
 			"sudo rpm -U https://github.com/achton/cc360/releases/download/v1.0.0/cc360_1.0.0_linux_amd64.rpm"},
 		{"go install", "/home/u/go/bin/cc360", nil,
-			"go install github.com/achton/cc360@latest"},
+			"GOBIN=/home/u/go/bin go install github.com/achton/cc360@latest"},
 		{"install script default dir", "/usr/local/bin/cc360", nil,
-			"curl -fsSL https://raw.githubusercontent.com/achton/cc360/main/install.sh | sh"},
+			"curl -fsSL https://raw.githubusercontent.com/achton/cc360/main/install.sh | CC360_INSTALL_DIR=/usr/local/bin sh"},
 		{"install script own dir", "/home/u/bin/cc360", nil,
 			"curl -fsSL https://raw.githubusercontent.com/achton/cc360/main/install.sh | CC360_INSTALL_DIR=/home/u/bin sh"},
 		{"install script dir with a space", "/home/u/my bin/cc360", nil,

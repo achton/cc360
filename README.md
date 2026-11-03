@@ -135,7 +135,7 @@ When the key is absent, `cc360` reads `~/.claude` plus `$CLAUDE_CONFIG_DIR` when
 |---|---|
 | Homebrew | `brew upgrade --cask achton/tap/cc360` |
 | `.deb`, `.rpm`, `.apk` | Downloads the package of the new release and installs it with `dpkg`, `rpm` or `apk` |
-| `go install` | `go install github.com/achton/cc360@latest` |
+| `go install` | `go install github.com/achton/cc360@latest`, with `GOBIN` set to the directory of the running binary |
 | Install script or a downloaded binary | The install script, into the directory of the running binary |
 
 `cc360` never replaces itself. A failed check is silent. Development builds do not check. Set `check_updates = false` to turn it off.

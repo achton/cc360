@@ -491,10 +491,20 @@ func TestUpdateNotice(t *testing.T) {
 		t.Errorf("status = %q", got)
 	}
 
-	// A narrow terminal truncates the notice rather than wrapping the header.
-	updated, _ = m.Update(tea.WindowSizeMsg{Width: 40, Height: 40})
-	if first := strings.SplitN(updated.(Model).View().Content, "\n", 2)[0]; lipgloss.Width(first) != 40 {
-		t.Errorf("header is %d columns wide at width 40", lipgloss.Width(first))
+	// A narrow terminal truncates the notice and the help bar rather than
+	// wrapping them, so the view keeps the terminal height.
+	for _, width := range []int{90, 40} {
+		updated, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		content := updated.(Model).View().Content
+		if got := lipgloss.Height(content); got != 40 {
+			t.Errorf("view is %d lines at width %d, want 40", got, width)
+		}
+		lines := strings.Split(content, "\n")
+		for _, line := range []string{lines[0], lines[len(lines)-1]} {
+			if lipgloss.Width(line) > width {
+				t.Errorf("%q is %d columns wide at width %d", ansi.Strip(line), lipgloss.Width(line), width)
+			}
+		}
 	}
 }
 

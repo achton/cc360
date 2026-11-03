@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,6 +22,10 @@ const (
 	checkInterval = 24 * time.Hour
 	fetchTimeout  = 5 * time.Second
 )
+
+// releaseTag is the only tag shape cc360 publishes. Anything else is refused,
+// because the version ends up in a shell command the user pastes.
+var releaseTag = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Release is the newest published cc360 release.
 type Release struct {
@@ -54,7 +59,7 @@ func (c Checker) Newer(ctx context.Context, current string) (Release, bool) {
 		return Release{}, false
 	}
 	rel, ok := c.latest(ctx)
-	if !ok {
+	if !ok || !releaseTag.MatchString(rel.Version) {
 		return Release{}, false
 	}
 	latest, ok := parseVersion(rel.Version)
@@ -112,7 +117,7 @@ func (c Checker) fetch(ctx context.Context) (Release, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return Release{}, err
 	}
-	if _, ok := parseVersion(body.TagName); !ok {
+	if !releaseTag.MatchString(body.TagName) {
 		return Release{}, fmt.Errorf("unexpected tag %q", body.TagName)
 	}
 	return Release{Version: strings.TrimPrefix(body.TagName, "v"), URL: body.HTMLURL}, nil
@@ -233,16 +238,14 @@ func command(exe, ver string, env installEnv) string {
 	case dir == "/usr/bin":
 		return "sudo rpm -U " + asset("rpm")
 	}
+	// Both commands below name the directory explicitly, so an exported GOBIN
+	// or CC360_INSTALL_DIR cannot send the new binary somewhere else.
 	for _, b := range env.goBins {
 		if filepath.Clean(b) == dir {
-			return "go install github.com/" + repo + "@latest"
+			return "GOBIN=" + shellQuote(dir) + " go install github.com/" + repo + "@latest"
 		}
 	}
-	script := "curl -fsSL https://raw.githubusercontent.com/" + repo + "/main/install.sh | "
-	if dir == "/usr/local/bin" {
-		return script + "sh"
-	}
-	return script + "CC360_INSTALL_DIR=" + shellQuote(dir) + " sh"
+	return "curl -fsSL https://raw.githubusercontent.com/" + repo + "/main/install.sh | CC360_INSTALL_DIR=" + shellQuote(dir) + " sh"
 }
 
 func shellQuote(s string) string {
