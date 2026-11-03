@@ -148,6 +148,25 @@ show_active = false
 	}
 }
 
+// Since February 2026 every current session arrives as an orphan transcript,
+// so a config that omits scan_orphans must still scan them.
+func TestScanFlagsDefaultWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `scan_paths = ["/tmp/test"]`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ScanOrphans {
+		t.Error("ScanOrphans = false, want true when the key is absent")
+	}
+	if !cfg.HideSidechains {
+		t.Error("HideSidechains = false, want true when the key is absent")
+	}
+}
+
 // The generated default config must parse back to the intended defaults.
 func TestDefaultConfigParsesToDefaults(t *testing.T) {
 	dir := t.TempDir()
