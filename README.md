@@ -78,6 +78,7 @@ Config file: `~/.config/cc360/config.toml`
 | `hide_sidechains` | `true` | Hide sidechain (branched conversation) sessions. |
 | `sort_by` | `"modified"` | Default sort order. Options: `modified`, `created`, `messages`, `project`. |
 | `show_active` | `true` | Mark sessions that are currently running. See [Active session detection](#active-session-detection). |
+| `check_updates` | `true` | Check once a day for a newer release. See [Updates](#updates). |
 
 ## Keybindings
 
@@ -92,6 +93,7 @@ Config file: `~/.config/cc360/config.toml`
 | `p` | Open project picker (tree view with multi-select) |
 | `c` | Copy resume command to clipboard (via OSC 52) |
 | `r` | Reload config and re-scan all sessions |
+| `u` | Copy the command that installs a newer release (when one is announced) |
 | `Esc` | Clear text filter |
 | `q`, `Ctrl+C` | Quit |
 
@@ -124,6 +126,19 @@ When the key is absent, `cc360` reads `~/.claude` plus `$CLAUDE_CONFIG_DIR` when
 - Grey `○`: running and idle, ready for the next prompt
 
 `Enter` on a running background session (`claude --bg`, or a `/fork`) attaches to it with `claude attach`. An interactive session that runs in another terminal cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off. Every configured Claude home is polled, because the command only reports its own agents. This needs Claude Code 2.1.257 or later, which stopped `claude agents --json` resetting the terminal mode of the program that runs it.
+
+## Updates
+
+`cc360` asks GitHub for the latest release at most once a day, in the background, and caches the answer in `~/.cache/cc360/update-check.json`. When a newer release exists, the header says so. Press `u` to copy the upgrade command and show it in the status line. The command matches how this binary was installed:
+
+| Installed with | Command |
+|---|---|
+| Homebrew | `brew upgrade --cask achton/tap/cc360` |
+| `.deb`, `.rpm`, `.apk` | Downloads the package of the new release and installs it with `dpkg`, `rpm` or `apk` |
+| `go install` | `go install github.com/achton/cc360@latest`, with `GOBIN` set to the directory of the running binary |
+| Install script or a downloaded binary | The install script, into the directory of the running binary |
+
+`cc360` never replaces itself. A failed check is silent. Development builds do not check. Set `check_updates = false` to turn it off.
 
 ## How it works
 
@@ -171,6 +186,7 @@ Columns are responsive: Branch appears at 90+ columns, message count at 100+.
 main.go                         Entry point
 internal/
   config/config.go              TOML config loading, first-run experience
+  update/update.go              Daily release check and upgrade command
   scanner/
     scanner.go                  Dual-source session discovery (index + orphan JSONL)
     active.go                   Active session detection via claude agents --json

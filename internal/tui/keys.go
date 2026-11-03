@@ -15,6 +15,7 @@ type keyMap struct {
 	Filter   key.Binding
 	Picker   key.Binding
 	Reload   key.Binding
+	Upgrade  key.Binding
 	Escape   key.Binding
 	Quit     key.Binding
 }
@@ -68,6 +69,10 @@ func newKeyMap() keyMap {
 		Reload: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "reload"),
+		),
+		Upgrade: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "upgrade"),
 		),
 		Escape: key.NewBinding(
 			key.WithKeys("esc"),

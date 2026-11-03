@@ -165,6 +165,9 @@ func TestScanFlagsDefaultWhenAbsent(t *testing.T) {
 	if !cfg.HideSidechains {
 		t.Error("HideSidechains = false, want true when the key is absent")
 	}
+	if !cfg.CheckUpdates {
+		t.Error("CheckUpdates = false, want true when the key is absent")
+	}
 }
 
 // The generated default config must parse back to the intended defaults.
@@ -180,6 +183,9 @@ func TestDefaultConfigParsesToDefaults(t *testing.T) {
 	}
 	if !cfg.ShowActive {
 		t.Error("ShowActive = false, want true from the default config")
+	}
+	if !cfg.CheckUpdates {
+		t.Error("CheckUpdates = false, want true from the default config")
 	}
 }
 

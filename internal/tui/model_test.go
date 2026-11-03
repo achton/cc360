@@ -10,6 +10,8 @@ import (
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
 	"github.com/achton/cc360/internal/scanner"
+	"github.com/achton/cc360/internal/update"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
@@ -461,5 +463,61 @@ func TestDetailPaneHostileText(t *testing.T) {
 				t.Errorf("%s at %d: raw control sequence in output", name, width)
 			}
 		}
+	}
+}
+
+func TestUpdateNotice(t *testing.T) {
+	m := testModel(testSessions())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	m.copyUpgradeCommand()
+	if m.statusMsg != "No newer cc360 release found" {
+		t.Errorf("before a result: status = %q", m.statusMsg)
+	}
+
+	updated, _ = m.Update(updateFoundMsg{release: update.Release{Version: "1.2.3"}, command: "brew upgrade --cask achton/tap/cc360"})
+	m = updated.(Model)
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "↑ v1.2.3 available · u to upgrade") {
+		t.Error("header does not announce the release")
+	}
+	if !strings.Contains(view, "u upgrade") {
+		t.Error("help line does not list the u key")
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if got := updated.(Model).statusMsg; got != "Copied: brew upgrade --cask achton/tap/cc360" {
+		t.Errorf("status = %q", got)
+	}
+
+	// A narrow terminal truncates the notice and the help bar rather than
+	// wrapping them, so the view keeps the terminal height.
+	for _, width := range []int{90, 40} {
+		updated, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		content := updated.(Model).View().Content
+		if got := lipgloss.Height(content); got != 40 {
+			t.Errorf("view is %d lines at width %d, want 40", got, width)
+		}
+		lines := strings.Split(content, "\n")
+		for _, line := range []string{lines[0], lines[len(lines)-1]} {
+			if lipgloss.Width(line) > width {
+				t.Errorf("%q is %d columns wide at width %d", ansi.Strip(line), lipgloss.Width(line), width)
+			}
+		}
+	}
+}
+
+func TestUpdateCheckOnlyWhenEnabled(t *testing.T) {
+	m := testModel(testSessions()).WithVersion("0.9.0")
+	if m.updateCheckCmd() != nil {
+		t.Error("check_updates is off, so no check must run")
+	}
+	m.cfg.CheckUpdates = true
+	if m.WithVersion("").updateCheckCmd() != nil {
+		t.Error("without a version there is nothing to compare")
+	}
+	if m.updateCheckCmd() == nil {
+		t.Error("enabled with a version: want a check")
 	}
 }
