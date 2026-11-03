@@ -175,3 +175,25 @@ func TestScanPrefersTranscriptOverIndex(t *testing.T) {
 		t.Errorf("index-only session missing or wrong: %+v", got["index-only"])
 	}
 }
+
+func TestParseActivityMetadata(t *testing.T) {
+	pr := func(repo string, n int) string {
+		return fmt.Sprintf(`{"type":"pr-link","prNumber":%d,"prUrl":"https://x","prRepository":%q,"timestamp":"2026-01-01T00:00:03Z"}`, n, repo)
+	}
+	cost := func(usd float64, added int) string {
+		return fmt.Sprintf(`{"type":"cost-state","totalCostUSD":%g,"totalLinesAdded":%d,"totalLinesRemoved":3,"modelUsage":{"m":{"x":1}}}`, usd, added)
+	}
+	sdk := strings.Replace(tUser, `"type":"user"`, `"type":"user","entrypoint":"sdk-cli"`, 1)
+	cli := strings.Replace(tBot, `"type":"assistant"`, `"type":"assistant","entrypoint":"cli"`, 1)
+
+	s := parse(t, tHead, sdk, pr("o/a", 1), pr("o/b", 2), cost(0.5, 10), pr("o/a", 1), cli, cost(1.25, 40))
+	if got := strings.Join(s.PRLinks, " "); got != "o/b#2 o/a#1" {
+		t.Errorf("PRLinks = %q, want a repeat moved to the end", got)
+	}
+	if s.CostUSD != 1.25 || s.LinesAdded != 40 || s.LinesRemoved != 3 {
+		t.Errorf("cost = %v +%d -%d, want the last totals", s.CostUSD, s.LinesAdded, s.LinesRemoved)
+	}
+	if s.Entrypoint != "cli" {
+		t.Errorf("Entrypoint = %q, want cli once the session went interactive", s.Entrypoint)
+	}
+}

@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 )
 
 // topLevelFields walks the top level of one JSON object and hands each key and
@@ -143,6 +144,16 @@ func jsonTrue(v []byte) bool {
 	return string(v) == "true"
 }
 
+func jsonInt(v []byte) int64 {
+	n, _ := strconv.ParseInt(string(v), 10, 64)
+	return n
+}
+
+func jsonFloat(v []byte) float64 {
+	f, _ := strconv.ParseFloat(string(v), 64)
+	return f
+}
+
 // decodeEntry fills e from one transcript record. e.Message aliases line.
 func decodeEntry(line []byte, e *jsonlEntry) bool {
 	*e = jsonlEntry{}
@@ -170,6 +181,18 @@ func decodeEntry(line []byte, e *jsonlEntry) bool {
 			e.CustomTitle = jsonString(v)
 		case "agentName":
 			e.AgentName = jsonString(v)
+		case "entrypoint":
+			e.Entrypoint = jsonString(v)
+		case "prNumber":
+			e.PRNumber = jsonInt(v)
+		case "prRepository":
+			e.PRRepository = jsonString(v)
+		case "totalCostUSD":
+			e.TotalCostUSD = jsonFloat(v)
+		case "totalLinesAdded":
+			e.LinesAdded = jsonInt(v)
+		case "totalLinesRemoved":
+			e.LinesRemoved = jsonInt(v)
 		case "message":
 			e.Message = v
 		}

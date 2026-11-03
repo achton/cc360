@@ -11,12 +11,15 @@ import (
 )
 
 // VisibleSessions drops sessions that cannot or should not be resumed from the
-// table: non-interactive runs, agent-team teammates, sidechains when hidden,
-// and sessions whose project dir is gone.
+// table: `claude -p` and Agent SDK runs, agent-team teammates, sidechains when
+// hidden, and sessions whose project dir is gone.
 func VisibleSessions(all []db.Session, cfg config.Config) []db.Session {
 	out := make([]db.Session, 0, len(all))
 	for _, s := range all {
 		if cfg.HideSidechains && s.IsSidechain {
+			continue
+		}
+		if scanner.IsSDKEntrypoint(s.Entrypoint) {
 			continue
 		}
 		// Legacy index entries can still open with the local-command caveat.

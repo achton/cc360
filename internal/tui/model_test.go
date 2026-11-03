@@ -337,6 +337,10 @@ func TestDetailPaneKeepsItsSize(t *testing.T) {
 		FirstPrompt: strings.Repeat("prompt ", 60),
 		GitBranch:   strings.Repeat("branch-", 20),
 		Modified:    time.Now(),
+		PRLinks:     []string{"owner/repo#1", strings.Repeat("org/", 30) + "repo#2"},
+		CostUSD:     12.5,
+		LinesAdded:  1000,
+		Entrypoint:  "claude-desktop",
 	}
 	d := detailPane{visible: true}
 

@@ -53,31 +53,18 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 	}
 
 	inner := detailInnerWidth(width)
-	var lines []string
+	var head, tail []string
 
 	if line := agentLine(agent); line != "" {
-		lines = append(lines, ansi.Truncate(line, inner, "…"))
+		head = append(head, ansi.Truncate(line, inner, "…"))
 	}
 
 	// Title (bold, prominent) or folder if no title
 	title := firstNonEmpty(sanitize(s.CustomTitle), sanitize(s.Title), sanitize(s.ExistingSummary))
 	if title != "" {
-		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, inner)))
+		head = append(head, detailTitleStyle.Render(truncateRunes(title, inner)))
 	} else {
-		lines = append(lines, detailTitleStyle.Render(displayProjectName(*s)))
-	}
-
-	// Remaining: First prompt (word-wrapped, fills available space)
-	prompt := sanitize(s.FirstPrompt)
-	if prompt != "" {
-		wrapped := wordWrap(prompt, inner)
-		maxPromptLines := 3
-		for i, line := range wrapped {
-			if i >= maxPromptLines {
-				break
-			}
-			lines = append(lines, detailPromptStyle.Render(line))
-		}
+		head = append(head, detailTitleStyle.Render(displayProjectName(*s)))
 	}
 
 	// Line 5: Folder + worktree indicator + path
@@ -90,7 +77,7 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 	if s.ProjectPath != "" && s.ProjectPath != displayName {
 		folderLine += detailMetaStyle.Render("  (" + s.ProjectPath + ")")
 	}
-	lines = append(lines, ansi.Truncate(folderLine, inner, "…"))
+	tail = append(tail, ansi.Truncate(folderLine, inner, "…"))
 
 	// Line 6: Metadata row — less important stuff, compact
 	var meta []string
@@ -110,7 +97,23 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 		idLen = 12
 	}
 	meta = append(meta, "ID: "+s.SessionID[:idLen])
-	lines = append(lines, ansi.Truncate(detailMetaStyle.Render(strings.Join(meta, "  ")), inner, "…"))
+	tail = append(tail, ansi.Truncate(detailMetaStyle.Render(strings.Join(meta, "  ")), inner, "…"))
+	if extra := activityLine(s); extra != "" {
+		tail = append(tail, ansi.Truncate(detailMetaStyle.Render(extra), inner, "…"))
+	}
+
+	// The first prompt fills what the fixed lines leave, up to three lines.
+	lines := head
+	if prompt := sanitize(s.FirstPrompt); prompt != "" {
+		room := min(detailContentLines-len(head)-len(tail), 3)
+		for i, line := range wordWrap(prompt, inner) {
+			if i >= room {
+				break
+			}
+			lines = append(lines, detailPromptStyle.Render(line))
+		}
+	}
+	lines = append(lines, tail...)
 
 	// Pad or truncate
 	for len(lines) < detailContentLines {
@@ -122,6 +125,44 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 
 	content := strings.Join(lines, "\n")
 	return detailBorderStyle.Width(width).Render(content)
+}
+
+// activityLine sums up what a session did: its latest PR, cost and line
+// changes, and where it was started when that was not the CLI.
+func activityLine(s *db.Session) string {
+	var parts []string
+	if n := len(s.PRLinks); n > 0 {
+		pr := "PR: " + sanitize(s.PRLinks[n-1])
+		if n > 1 {
+			pr += fmt.Sprintf(" (+%d)", n-1)
+		}
+		parts = append(parts, pr)
+	}
+	if s.CostUSD > 0 {
+		parts = append(parts, fmt.Sprintf("Cost: $%.2f", s.CostUSD))
+	}
+	if s.LinesAdded > 0 || s.LinesRemoved > 0 {
+		parts = append(parts, fmt.Sprintf("Lines: +%d -%d", s.LinesAdded, s.LinesRemoved))
+	}
+	if origin := originName(s.Entrypoint); origin != "" {
+		parts = append(parts, "Origin: "+origin)
+	}
+	return strings.Join(parts, "  ")
+}
+
+// originName names where a session was started, or "" for the CLI.
+func originName(entrypoint string) string {
+	switch {
+	case entrypoint == "" || entrypoint == "cli":
+		return ""
+	case entrypoint == "claude-desktop":
+		return "Desktop"
+	case entrypoint == "claude-vscode":
+		return "VS Code"
+	case scanner.IsSDKEntrypoint(entrypoint):
+		return "SDK"
+	}
+	return sanitize(entrypoint)
 }
 
 // agentLine describes a running session in one line, or "" when it is not.

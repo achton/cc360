@@ -62,3 +62,33 @@ func TestLoadSessionsTwice(t *testing.T) {
 		t.Errorf("cache has %d entries after a load, want 1", len(cache))
 	}
 }
+
+func TestVisibleSessionsHidesSDKRuns(t *testing.T) {
+	dir := t.TempDir()
+	all := []db.Session{
+		{SessionID: "cli", ProjectPath: dir, Entrypoint: "cli"},
+		{SessionID: "desktop", ProjectPath: dir, Entrypoint: "claude-desktop"},
+		{SessionID: "print", ProjectPath: dir, Entrypoint: "sdk-cli"},
+		{SessionID: "legacy", ProjectPath: dir},
+	}
+	got := VisibleSessions(all, config.Config{})
+	if len(got) != 3 {
+		t.Fatalf("got %d sessions, want the sdk-cli run hidden", len(got))
+	}
+	for _, s := range got {
+		if s.SessionID == "print" {
+			t.Error("sdk-cli session is visible")
+		}
+	}
+}
+
+func TestActivityLine(t *testing.T) {
+	s := &db.Session{PRLinks: []string{"o/a#1", "o/b#2"}, CostUSD: 1.234, LinesAdded: 5, Entrypoint: "claude-vscode"}
+	want := "PR: o/b#2 (+1)  Cost: $1.23  Lines: +5 -0  Origin: VS Code"
+	if got := activityLine(s); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := activityLine(&db.Session{Entrypoint: "cli"}); got != "" {
+		t.Errorf("plain CLI session: got %q, want no line", got)
+	}
+}

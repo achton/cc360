@@ -23,6 +23,10 @@ func Sessions() []db.Session {
 			MessageCount: 24,
 			Created:      d(2),
 			Modified:     d(1),
+			PRLinks:      []string{"acme/api-gateway#142"},
+			CostUSD:      1.84,
+			LinesAdded:   212,
+			LinesRemoved: 37,
 		},
 		{
 			SessionID:    "a1b2c3d4-2222-4000-8000-000000000002",
