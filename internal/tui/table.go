@@ -401,13 +401,7 @@ func buildRows(sessions []db.Session, width int, cols []column, activeStates map
 			date += " " + idleStyle.Render("○")
 		}
 
-		// Same precedence as Claude Code's own session picker.
-		title := firstNonEmpty(
-			sanitize(s.Title),
-			sanitize(s.ExistingSummary),
-			sanitize(s.FirstPrompt),
-			sanitize(s.ProjectName),
-		)
+		title := firstNonEmpty(displayTitle(s), sanitize(s.ProjectName))
 
 		folder := sanitize(displayProjectName(s))
 		if s.IsWorktree {
@@ -427,6 +421,17 @@ func buildRows(sessions []db.Session, width int, cols []column, activeStates map
 		rows[i] = row
 	}
 	return rows
+}
+
+// displayTitle picks what names a session, in Claude Code's own order: a name
+// given with /rename, then the generated title, then the first prompt.
+func displayTitle(s db.Session) string {
+	return firstNonEmpty(
+		sanitize(s.CustomTitle),
+		sanitize(s.Title),
+		sanitize(s.ExistingSummary),
+		sanitize(s.FirstPrompt),
+	)
 }
 
 func firstNonEmpty(vals ...string) string {
