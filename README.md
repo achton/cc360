@@ -86,7 +86,7 @@ Config file: `~/.config/cc360/config.toml`
 | `↑`/`k`, `↓`/`j` | Navigate up/down |
 | `PgUp`, `PgDn` | Page up/down |
 | `Home`/`g`, `End`/`G` | Jump to top/bottom |
-| `Enter` | Resume the selected session (`claude --resume`) |
+| `Enter` | Resume the selected session (`claude --resume`), or attach to a running background session (`claude attach`) |
 | `Tab` | Toggle detail pane (open by default) |
 | `/` | Open text filter (live search across all fields) |
 | `p` | Open project picker (tree view with multi-select) |
@@ -120,9 +120,10 @@ When the key is absent, `cc360` reads `~/.claude` plus `$CLAUDE_CONFIG_DIR` when
 `cc360` asks Claude Code which sessions are running, via `claude agents --json`, and marks them next to the date:
 
 - Green `●`: Claude is working
-- Grey `○`: running, waiting for input
+- Peach `◆`: needs input, such as a permission prompt. The detail pane says what it waits for.
+- Grey `○`: running and idle, ready for the next prompt
 
-Running sessions cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off. Every configured Claude home is polled, because the command only reports its own agents.
+`Enter` on a running background session (`claude --bg`, or a `/fork`) attaches to it with `claude attach`. An interactive session that runs in another terminal cannot be resumed, to prevent two processes writing one transcript. Detection refreshes every 15 seconds; set `show_active = false` in the config to turn it off. Every configured Claude home is polled, because the command only reports its own agents. This needs Claude Code 2.1.257 or later, which stopped `claude agents --json` resetting the terminal mode of the program that runs it.
 
 ## How it works
 
