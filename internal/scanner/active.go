@@ -94,10 +94,13 @@ func agentsForHome(home string) map[string]Agent {
 }
 
 // upsertAgent records a session, keeping the more urgent state. One session
-// can be reported twice, both within a home and across two of them.
+// can be reported twice, both within a home and across two of them. On a tie
+// a background job wins, because only that can be attached to.
 func upsertAgent(agents map[string]Agent, id string, a Agent) {
-	if prev, ok := agents[id]; ok && prev.State >= a.State {
-		return
+	if prev, ok := agents[id]; ok {
+		if prev.State > a.State || (prev.State == a.State && (prev.Background || !a.Background)) {
+			return
+		}
 	}
 	agents[id] = a
 }

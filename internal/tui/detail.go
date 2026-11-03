@@ -61,28 +61,25 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 
 	// Title (bold, prominent) or folder if no title
 	title := firstNonEmpty(sanitize(s.CustomTitle), sanitize(s.Title), sanitize(s.ExistingSummary))
-	if title != "" {
-		head = append(head, detailTitleStyle.Render(truncateRunes(title, inner)))
-	} else {
-		head = append(head, detailTitleStyle.Render(displayProjectName(*s)))
-	}
+	displayName := sanitize(displayProjectName(*s))
+	// Truncated by cells, not runes, so wide text cannot wrap and grow the pane.
+	head = append(head, detailTitleStyle.Render(ansi.Truncate(firstNonEmpty(title, displayName), inner, "…")))
 
 	// Line 5: Folder + worktree indicator + path
-	displayName := displayProjectName(*s)
 	folderLine := detailLabelStyle.Render("Folder: ") + detailPromptStyle.Render(displayName)
 	if s.IsWorktree {
 		folderLine += worktreeBadge(s.WorktreeName)
 	}
 	// Show the real working directory (the worktree's own path when a worktree).
 	if s.ProjectPath != "" && s.ProjectPath != displayName {
-		folderLine += detailMetaStyle.Render("  (" + s.ProjectPath + ")")
+		folderLine += detailMetaStyle.Render("  (" + sanitize(s.ProjectPath) + ")")
 	}
 	tail = append(tail, ansi.Truncate(folderLine, inner, "…"))
 
 	// Line 6: Metadata row — less important stuff, compact
 	var meta []string
 	if s.GitBranch != "" {
-		meta = append(meta, "Branch: "+s.GitBranch)
+		meta = append(meta, "Branch: "+sanitize(s.GitBranch))
 	}
 	if s.MessageCount > 0 {
 		meta = append(meta, fmt.Sprintf("Msgs: %d", s.MessageCount))
@@ -106,7 +103,7 @@ func (d *detailPane) view(s *db.Session, width int, agent scanner.Agent) string 
 	lines := head
 	if prompt := sanitize(s.FirstPrompt); prompt != "" {
 		room := min(detailContentLines-len(head)-len(tail), 3)
-		for i, line := range wordWrap(prompt, inner) {
+		for i, line := range strings.Split(ansi.Wrap(prompt, inner, ""), "\n") {
 			if i >= room {
 				break
 			}
@@ -219,30 +216,4 @@ func truncateRunes(s string, maxLen int) string {
 		return "…"
 	}
 	return string(runes[:maxLen-1]) + "…"
-}
-
-// wordWrap breaks text into lines of at most width characters.
-func wordWrap(s string, width int) []string {
-	if width <= 0 {
-		return []string{s}
-	}
-	var lines []string
-	for len(s) > 0 {
-		if len([]rune(s)) <= width {
-			lines = append(lines, s)
-			break
-		}
-		// Find last space within width
-		runes := []rune(s)
-		cut := width
-		for cut > 0 && runes[cut] != ' ' {
-			cut--
-		}
-		if cut == 0 {
-			cut = width // no space found, hard break
-		}
-		lines = append(lines, string(runes[:cut]))
-		s = strings.TrimLeft(string(runes[cut:]), " ")
-	}
-	return lines
 }

@@ -18,8 +18,10 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
-// sessionIDPattern matches valid session IDs: alphanumeric plus hyphens, max 100 chars.
-var sessionIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+// sessionIDPattern matches valid session IDs: alphanumeric plus hyphens, max
+// 100 chars. The first character must not be a hyphen, or the ID would be read
+// as a flag by claude.
+var sessionIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
 
 // isValidSessionID checks that a session ID matches the expected format:
 // alphanumeric characters and hyphens only, between 1 and 100 characters.
@@ -309,10 +311,11 @@ func buildColumns(width int) []column {
 }
 
 // sanitize replaces control characters with spaces and strips XML/HTML markup.
+// C1 controls count too: some terminals read U+009B as CSI.
 func sanitize(s string) string {
 	s = stripTags(s)
 	return strings.Map(func(r rune) rune {
-		if r < ' ' {
+		if r < ' ' || (r >= 0x7f && r <= 0x9f) {
 			return ' '
 		}
 		return r
