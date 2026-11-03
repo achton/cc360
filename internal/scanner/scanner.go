@@ -30,6 +30,11 @@ type Session struct {
 	IsSidechain     bool
 	JSONLPath       string
 
+	// The transcript's size and mtime when it was parsed, so an unchanged file
+	// is not parsed again. Zero for sessions that came from the index.
+	FileSize    int64
+	FileModNano int64
+
 	// Worktree metadata, resolved from git after the session is parsed.
 	// WorktreeResolved is true when resolution could inspect the project on disk.
 	// When it is false, the DB layer keeps the stored values.
@@ -38,6 +43,13 @@ type Session struct {
 	ParentProjectName string // deriveProjectName of the main worktree root
 	WorktreeName      string // leaf dir name of the worktree (badge text)
 }
+
+// ParserVersion changes whenever parseOrphanJSONL starts reading something
+// new, so sessions cached by an older parser are parsed again.
+const ParserVersion = 1
+
+// Cache holds sessions from an earlier scan, keyed by transcript path.
+type Cache map[string]Session
 
 // indexEntry matches the JSON structure in sessions-index.json.
 type indexEntry struct {
@@ -391,12 +403,39 @@ func parseOrphanJSONL(path string, scanPaths []string) *Session {
 	}
 }
 
+// loadTranscript parses a transcript, or reuses the cached session when the
+// file has not changed since. Any change parses the whole file again, because
+// Claude Code also rewrites transcripts in place, not only appends to them.
+func loadTranscript(path string, scanPaths []string, cache Cache) *Session {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	size, mod := info.Size(), info.ModTime().UnixNano()
+	if c, ok := cache[path]; ok && c.FileSize == size && c.FileModNano == mod {
+		c.ProjectName = deriveProjectName(c.ProjectPath, scanPaths)
+		c.ClaudeDir = filepath.Dir(path)
+		c.JSONLPath = path
+		// A rename from outside the CLI rewrites only the sidecar.
+		if t := readCustomTitleSidecar(c.ClaudeDir, c.SessionID); t != "" {
+			c.CustomTitle = truncateField(t, maxTitleLen)
+		}
+		return &c
+	}
+	s := parseOrphanJSONL(path, scanPaths)
+	if s != nil {
+		s.FileSize, s.FileModNano = size, mod
+	}
+	return s
+}
+
 // Scan discovers Claude Code sessions from disk, reading every dir in
 // cfg.ClaudeHomes. An earlier home wins, so that list is the precedence order.
-func Scan(cfg config.Config) ([]Session, error) {
+// cache may be nil, which parses every transcript.
+func Scan(cfg config.Config, cache Cache) ([]Session, error) {
 	sessions := make(map[string]Session)
 	for _, home := range cfg.ClaudeHomes {
-		if err := scanHome(home, cfg, sessions); err != nil {
+		if err := scanHome(home, cfg, cache, sessions); err != nil {
 			return nil, err
 		}
 	}
@@ -419,7 +458,7 @@ func Scan(cfg config.Config) ([]Session, error) {
 // scanHome adds one Claude config dir's sessions to sessions, keyed by session
 // ID. A missing projects dir is skipped, because a second config need not exist
 // on every machine. Existing entries stay, so an earlier home wins.
-func scanHome(home string, cfg config.Config, sessions map[string]Session) error {
+func scanHome(home string, cfg config.Config, cache Cache, sessions map[string]Session) error {
 	projectsDir := filepath.Join(home, "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
@@ -446,7 +485,7 @@ func scanHome(home string, cfg config.Config, sessions map[string]Session) error
 		if cfg.ScanOrphans {
 			jsonlFiles, _ := filepath.Glob(filepath.Join(dirPath, "*.jsonl"))
 			for _, jf := range jsonlFiles {
-				s := parseOrphanJSONL(jf, cfg.ScanPaths)
+				s := loadTranscript(jf, cfg.ScanPaths, cache)
 				if s == nil {
 					continue
 				}

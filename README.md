@@ -138,7 +138,7 @@ The encoded path replaces `/` with `-` (e.g. `/home/user/Code/myproject` → `-h
 
 ### Caching
 
-Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, `cc360` scans the disk and upserts into the cache.
+Session metadata is cached in a SQLite database at `~/.cache/cc360/cc360.db`. On each launch, `cc360` scans the disk and upserts into the cache. A transcript whose size and modification time are unchanged since the last scan is not read again, so a warm start takes milliseconds.
 
 Claude Code deletes old transcripts after `cleanupPeriodDays` (30 by default). Sessions that have a title or a name stay in the cache so it survives, until their project falls outside the scan paths.
 

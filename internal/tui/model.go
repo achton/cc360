@@ -20,22 +20,21 @@ import (
 
 // Model is the top-level Bubbletea model.
 type Model struct {
-	db              *db.DB
-	cfg             config.Config
-	allSessions     []db.Session // full unfiltered list
-	sessions        []db.Session // currently displayed (filtered)
-	scannerSessions []scanner.Session
-	activeStates    map[string]scanner.Agent
-	table           sessionTable
-	detail          detailPane
-	filter          filterInput
-	picker          projectPicker
-	projectFilter   map[string]bool // if non-empty, only show sessions from these projects
-	tableInit       bool
-	keys            keyMap
-	width           int
-	height          int
-	statusMsg       string
+	db            *db.DB
+	cfg           config.Config
+	allSessions   []db.Session // full unfiltered list
+	sessions      []db.Session // currently displayed (filtered)
+	activeStates  map[string]scanner.Agent
+	table         sessionTable
+	detail        detailPane
+	filter        filterInput
+	picker        projectPicker
+	projectFilter map[string]bool // if non-empty, only show sessions from these projects
+	tableInit     bool
+	keys          keyMap
+	width         int
+	height        int
+	statusMsg     string
 }
 
 type execFinishedMsg struct{ err error }
@@ -49,7 +48,6 @@ type activeResultMsg struct {
 type reloadResultMsg struct {
 	cfg      config.Config
 	sessions []db.Session
-	scanSess []scanner.Session
 	err      error
 }
 
@@ -62,18 +60,17 @@ func activeTickCmd() tea.Cmd {
 }
 
 // New creates the initial TUI model.
-func New(database *db.DB, cfg config.Config, sessions []db.Session, scannerSessions []scanner.Session, activeStates map[string]scanner.Agent) Model {
+func New(database *db.DB, cfg config.Config, sessions []db.Session, activeStates map[string]scanner.Agent) Model {
 	return Model{
-		db:              database,
-		cfg:             cfg,
-		allSessions:     sessions,
-		sessions:        sessions,
-		scannerSessions: scannerSessions,
-		activeStates:    activeStates,
-		detail:          detailPane{visible: true},
-		filter:          newFilterInput(),
-		keys:            newKeyMap(),
-		tableInit:       false,
+		db:           database,
+		cfg:          cfg,
+		allSessions:  sessions,
+		sessions:     sessions,
+		activeStates: activeStates,
+		detail:       detailPane{visible: true},
+		filter:       newFilterInput(),
+		keys:         newKeyMap(),
+		tableInit:    false,
 	}
 }
 
@@ -178,7 +175,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cfg = msg.cfg
-		m.scannerSessions = msg.scanSess
 		m.allSessions = msg.sessions
 		// Clear filters and rebuild
 		m.filter.close()
@@ -548,32 +544,11 @@ func (m *Model) reloadCmd() tea.Cmd {
 			return reloadResultMsg{err: err}
 		}
 
-		scanned, err := scanner.Scan(cfg)
+		sessions, err := LoadSessions(database, cfg)
 		if err != nil {
 			return reloadResultMsg{err: err}
 		}
-
-		if err := database.Upsert(scanned); err != nil {
-			return reloadResultMsg{err: err}
-		}
-
-		ids := make([]string, len(scanned))
-		for i, s := range scanned {
-			ids[i] = s.SessionID
-		}
-		// Stale rows are harmless; a real DB fault surfaces on the query below.
-		_, _ = database.PruneUnseen(ids, cfg.ScanPaths)
-
-		all, err := database.AllSessions(cfg.SortBy, true)
-		if err != nil {
-			return reloadResultMsg{err: err}
-		}
-
-		return reloadResultMsg{
-			cfg:      cfg,
-			sessions: VisibleSessions(all, cfg),
-			scanSess: scanned,
-		}
+		return reloadResultMsg{cfg: cfg, sessions: sessions}
 	}
 }
 

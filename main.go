@@ -61,12 +61,6 @@ func main() {
 		return
 	}
 
-	sessions, err := scanner.Scan(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning sessions: %v\n", err)
-		os.Exit(1)
-	}
-
 	database, err := db.Open("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
@@ -74,30 +68,14 @@ func main() {
 	}
 	defer database.Close()
 
-	if err := database.Upsert(sessions); err != nil {
-		fmt.Fprintf(os.Stderr, "Error upserting sessions: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Prune sessions no longer found on disk
-	scannedIDs := make([]string, len(sessions))
-	for i, s := range sessions {
-		scannedIDs[i] = s.SessionID
-	}
-	if _, err := database.PruneUnseen(scannedIDs, cfg.ScanPaths); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not prune stale sessions: %v\n", err)
-	}
-
-	all, err := database.AllSessions(cfg.SortBy, true)
+	sessions, err := tui.LoadSessions(database, cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error querying sessions: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error loading sessions: %v\n", err)
 		os.Exit(1)
 	}
-
-	filtered := tui.VisibleSessions(all, cfg)
 
 	// The first poll runs from Init, so startup does not wait on it.
-	m := tui.New(database, cfg, filtered, sessions, nil)
+	m := tui.New(database, cfg, sessions, nil)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -119,7 +97,7 @@ func runDemo() {
 		sessions[1].SessionID: {State: scanner.StateWaiting, WaitingFor: "permission", Background: true, JobID: "a1b2c3d4"},
 		sessions[2].SessionID: {State: scanner.StateIdle},
 	}
-	m := tui.New(nil, cfg, sessions, nil, activeStates)
+	m := tui.New(nil, cfg, sessions, activeStates)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

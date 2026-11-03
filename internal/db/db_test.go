@@ -461,3 +461,29 @@ func TestPruneUnseenRetainsCustomTitled(t *testing.T) {
 		t.Errorf("got %+v, want only the named session", all)
 	}
 }
+
+func TestScanCacheRoundTrip(t *testing.T) {
+	db := testDB(t)
+	mustUpsert(t, db, []scanner.Session{
+		{SessionID: "parsed", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p",
+			JSONLPath: "/c/parsed.jsonl", FileSize: 123, FileModNano: 456, Title: "T", CustomTitle: "N", MessageCount: 7},
+		{SessionID: "indexed", ProjectName: "p", ClaudeDir: "/c", JSONLPath: "/c/indexed.jsonl"},
+	})
+
+	cache, err := db.ScanCache(scanner.ParserVersion)
+	if err != nil {
+		t.Fatalf("ScanCache: %v", err)
+	}
+	if len(cache) != 1 {
+		t.Fatalf("cache has %d entries, want only the parsed session", len(cache))
+	}
+	got := cache["/c/parsed.jsonl"]
+	if got.SessionID != "parsed" || got.FileSize != 123 || got.FileModNano != 456 ||
+		got.Title != "T" || got.CustomTitle != "N" || got.MessageCount != 7 {
+		t.Errorf("cached = %+v", got)
+	}
+
+	if other, _ := db.ScanCache(scanner.ParserVersion + 1); len(other) != 0 {
+		t.Errorf("another parser version must not reuse the cache, got %d entries", len(other))
+	}
+}

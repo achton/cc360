@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 	is_worktree     INTEGER,
 	parent_project_name TEXT,
 	worktree_name   TEXT,
-	custom_title    TEXT
+	custom_title    TEXT,
+	jsonl_size      INTEGER,
+	jsonl_mtime     INTEGER,
+	parser_version  INTEGER
 );
 `
 
@@ -43,6 +46,9 @@ var addedColumns = []struct{ name, decl string }{
 	{"parent_project_name", "TEXT"},
 	{"worktree_name", "TEXT"},
 	{"custom_title", "TEXT"},
+	{"jsonl_size", "INTEGER"},
+	{"jsonl_mtime", "INTEGER"},
+	{"parser_version", "INTEGER"},
 }
 
 // sessionColumns is listed explicitly so databases created by older versions,
@@ -165,6 +171,15 @@ func worktreeArgs(s scanner.Session) (isWorktree, parentName, worktreeName any) 
 	return boolToInt(s.IsWorktree), s.ParentProjectName, s.WorktreeName
 }
 
+// stampArgs returns the transcript stamp for Upsert, or NULLs for a session
+// that was not parsed from a transcript, so it never counts as cached.
+func stampArgs(s scanner.Session) (size, mtime, version any) {
+	if s.FileSize == 0 && s.FileModNano == 0 {
+		return nil, nil, nil
+	}
+	return s.FileSize, s.FileModNano, scanner.ParserVersion
+}
+
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -204,8 +219,9 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			(session_id, project_name, project_path, claude_dir,
 			 first_prompt, existing_summary, title, message_count, created, modified,
 			 git_branch, is_sidechain, jsonl_path, last_scanned,
-			 is_worktree, parent_project_name, worktree_name, custom_title)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 is_worktree, parent_project_name, worktree_name, custom_title,
+			 jsonl_size, jsonl_mtime, parser_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
@@ -227,7 +243,10 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			-- when 0/""); preserve stored values when it could not inspect.
 			is_worktree = COALESCE(excluded.is_worktree, sessions.is_worktree),
 			parent_project_name = COALESCE(excluded.parent_project_name, sessions.parent_project_name),
-			worktree_name = COALESCE(excluded.worktree_name, sessions.worktree_name)
+			worktree_name = COALESCE(excluded.worktree_name, sessions.worktree_name),
+			jsonl_size = excluded.jsonl_size,
+			jsonl_mtime = excluded.jsonl_mtime,
+			parser_version = excluded.parser_version
 	`)
 	if err != nil {
 		return err
@@ -236,12 +255,14 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 
 	for _, s := range sessions {
 		wtIsWorktree, wtParentName, wtName := worktreeArgs(s)
+		size, mtime, version := stampArgs(s)
 		_, err := stmt.Exec(
 			s.SessionID, s.ProjectName, s.ProjectPath, s.ClaudeDir,
 			s.FirstPrompt, s.ExistingSummary, s.Title, s.MessageCount,
 			formatTime(s.Created), formatTime(s.Modified),
 			s.GitBranch, boolToInt(s.IsSidechain), s.JSONLPath, now,
 			wtIsWorktree, wtParentName, wtName, s.CustomTitle,
+			size, mtime, version,
 		)
 		if err != nil {
 			return fmt.Errorf("upserting session %s: %w", s.SessionID, err)
@@ -384,6 +405,50 @@ func fillRetainPaths(tx *sql.Tx, paths []string) error {
 		}
 	}
 	return nil
+}
+
+// ScanCache returns the sessions an earlier scan parsed from transcripts with
+// the given parser version, keyed by transcript path, for scanner.Scan to
+// reuse while the file is unchanged.
+func (db *DB) ScanCache(parserVersion int) (scanner.Cache, error) {
+	rows, err := db.conn.Query(`
+		SELECT session_id, project_path, first_prompt, existing_summary, title,
+		       custom_title, message_count, created, modified, git_branch,
+		       is_sidechain, jsonl_path, jsonl_size, jsonl_mtime
+		FROM sessions
+		WHERE parser_version = ? AND COALESCE(jsonl_path, '') <> ''`, parserVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	cache := make(scanner.Cache)
+	for rows.Next() {
+		var (
+			s                                             scanner.Session
+			projectPath, firstPrompt, existingSummary     sql.NullString
+			title, customTitle, created, modified, branch sql.NullString
+			messageCount                                  sql.NullInt64
+			isSidechain                                   int
+		)
+		if err := rows.Scan(&s.SessionID, &projectPath, &firstPrompt, &existingSummary, &title,
+			&customTitle, &messageCount, &created, &modified, &branch,
+			&isSidechain, &s.JSONLPath, &s.FileSize, &s.FileModNano); err != nil {
+			return nil, fmt.Errorf("scanning cache row: %w", err)
+		}
+		s.ProjectPath = projectPath.String
+		s.FirstPrompt = firstPrompt.String
+		s.ExistingSummary = existingSummary.String
+		s.Title = title.String
+		s.CustomTitle = customTitle.String
+		s.MessageCount = int(messageCount.Int64)
+		s.Created = parseTime(created.String)
+		s.Modified = parseTime(modified.String)
+		s.GitBranch = branch.String
+		s.IsSidechain = isSidechain != 0
+		cache[s.JSONLPath] = s
+	}
+	return cache, rows.Err()
 }
 
 // Close closes the database connection.

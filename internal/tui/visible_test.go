@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 )
 
 func TestVisibleSessionsHidesSidechains(t *testing.T) {
@@ -19,5 +23,42 @@ func TestVisibleSessionsHidesSidechains(t *testing.T) {
 	}
 	if got := VisibleSessions(all, config.Config{HideSidechains: false}); len(got) != 2 {
 		t.Errorf("shown: got %d sessions, want 2", len(got))
+	}
+}
+
+// A second load must give the same result from the cache as the first parse.
+func TestLoadSessionsTwice(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "proj")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	dir := filepath.Join(home, "projects", strings.ReplaceAll(project, "/", "-"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := `{"parentUuid":null,"type":"user","sessionId":"s1","cwd":"` + project + `","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "s1.jsonl"), []byte(line+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	database, err := db.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.Close() })
+	cfg := config.Config{ScanPaths: []string{root}, ClaudeHomes: []string{home}, ScanOrphans: true, SortBy: "modified"}
+
+	for i := range 2 {
+		got, err := LoadSessions(database, cfg)
+		if err != nil {
+			t.Fatalf("load %d: %v", i, err)
+		}
+		if len(got) != 1 || got[0].FirstPrompt != "hello" || got[0].MessageCount != 1 {
+			t.Fatalf("load %d: got %+v", i, got)
+		}
+	}
+	if cache, _ := database.ScanCache(scanner.ParserVersion); len(cache) != 1 {
+		t.Errorf("cache has %d entries after a load, want 1", len(cache))
 	}
 }
