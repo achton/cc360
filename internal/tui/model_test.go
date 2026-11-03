@@ -14,7 +14,7 @@ import (
 )
 
 func testModel(sessions []db.Session) Model {
-	return New(nil, config.Config{}, sessions, nil, nil)
+	return New(nil, config.Config{}, sessions, nil)
 }
 
 func testSessions() []db.Session {

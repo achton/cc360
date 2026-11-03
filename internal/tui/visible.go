@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/achton/cc360/internal/config"
 	"github.com/achton/cc360/internal/db"
+	"github.com/achton/cc360/internal/scanner"
 )
 
 // VisibleSessions drops sessions that cannot or should not be resumed from the
@@ -33,4 +35,32 @@ func VisibleSessions(all []db.Session, cfg config.Config) []db.Session {
 		out = append(out, s)
 	}
 	return out
+}
+
+// LoadSessions scans the disk into the cache and returns the sessions to show.
+// Transcripts unchanged since the last scan are not parsed again.
+func LoadSessions(database *db.DB, cfg config.Config) ([]db.Session, error) {
+	// Without a usable cache every transcript is parsed, which is only slower.
+	cache, _ := database.ScanCache(scanner.ParserVersion)
+
+	scanned, err := scanner.Scan(cfg, cache)
+	if err != nil {
+		return nil, fmt.Errorf("scanning sessions: %w", err)
+	}
+	if err := database.Upsert(scanned); err != nil {
+		return nil, fmt.Errorf("caching sessions: %w", err)
+	}
+
+	ids := make([]string, len(scanned))
+	for i, s := range scanned {
+		ids[i] = s.SessionID
+	}
+	// Stale rows are harmless; a real DB fault surfaces on the query below.
+	_, _ = database.PruneUnseen(ids, cfg.ScanPaths)
+
+	all, err := database.AllSessions(cfg.SortBy, true)
+	if err != nil {
+		return nil, fmt.Errorf("querying sessions: %w", err)
+	}
+	return VisibleSessions(all, cfg), nil
 }

@@ -287,7 +287,7 @@ func TestScanReadsEveryClaudeHome(t *testing.T) {
 		ScanPaths:   []string{"/tmp/scanroot"},
 		ClaudeHomes: []string{work, personal},
 		ScanOrphans: true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestScanSkipsMissingHome(t *testing.T) {
 		ScanPaths:   []string{"/tmp/scanroot"},
 		ClaudeHomes: []string{filepath.Join(t.TempDir(), "absent"), work},
 		ScanOrphans: true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestScanFirstHomeWins(t *testing.T) {
 		ScanPaths:   []string{"/tmp/scanroot"},
 		ClaudeHomes: []string{first, second},
 		ScanOrphans: true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}

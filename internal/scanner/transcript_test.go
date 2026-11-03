@@ -156,7 +156,7 @@ func TestScanPrefersTranscriptOverIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := Scan(config.Config{ScanPaths: []string{"/tmp/scanroot"}, ClaudeHomes: []string{home}, ScanOrphans: true})
+	sessions, err := Scan(config.Config{ScanPaths: []string{"/tmp/scanroot"}, ClaudeHomes: []string{home}, ScanOrphans: true}, nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
