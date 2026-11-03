@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/achton/cc360/internal/db"
 )
 
 func TestSanitize(t *testing.T) {
@@ -221,5 +222,20 @@ func TestDateColumnFitsActiveIndicator(t *testing.T) {
 				t.Errorf("indicator %q truncated away for date %q", dot, date)
 			}
 		}
+	}
+}
+
+func TestDisplayTitlePrecedence(t *testing.T) {
+	s := db.Session{CustomTitle: "named", Title: "generated", FirstPrompt: "prompt"}
+	if got := displayTitle(s); got != "named" {
+		t.Errorf("got %q, want the /rename name first", got)
+	}
+	s.CustomTitle = ""
+	if got := displayTitle(s); got != "generated" {
+		t.Errorf("got %q, want the AI title next", got)
+	}
+	s.Title = ""
+	if got := displayTitle(s); got != "prompt" {
+		t.Errorf("got %q, want the first prompt last", got)
 	}
 }

@@ -23,7 +23,7 @@ type Config struct {
 // defaults are applied before decoding, so a key absent from the file keeps its
 // default rather than the Go zero value.
 func defaults() Config {
-	return Config{ShowActive: true}
+	return Config{ScanOrphans: true, HideSidechains: true, ShowActive: true}
 }
 
 const defaultConfig = `# Directories to scan for Claude Code sessions.

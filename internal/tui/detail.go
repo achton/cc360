@@ -64,7 +64,7 @@ func (d *detailPane) view(s *db.Session, width int, active scanner.ActiveState) 
 	}
 
 	// Title (bold, prominent) or folder if no title
-	title := firstNonEmpty(sanitize(s.Title), sanitize(s.ExistingSummary))
+	title := firstNonEmpty(sanitize(s.CustomTitle), sanitize(s.Title), sanitize(s.ExistingSummary))
 	if title != "" {
 		lines = append(lines, detailTitleStyle.Render(truncateRunes(title, inner)))
 	} else {

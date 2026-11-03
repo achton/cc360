@@ -425,3 +425,39 @@ func TestWorktreePreserveAndClear(t *testing.T) {
 		t.Fatalf("after resolved non-worktree, expected cleared metadata: %+v", s)
 	}
 }
+
+// A /rename name survives a rescan that no longer finds it, like the AI title.
+func TestUpsertKeepsCustomTitle(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test", CustomTitle: "my-name",
+	}})
+	mustUpsert(t, db, []scanner.Session{{
+		SessionID: "abc-123", ProjectName: "test", ClaudeDir: "/test",
+	}})
+
+	all, _ := db.AllSessions("modified", true)
+	if all[0].CustomTitle != "my-name" {
+		t.Errorf("custom title = %q, want my-name", all[0].CustomTitle)
+	}
+	if res, _ := db.Search("my-name"); len(res) != 1 {
+		t.Errorf("Search by custom title hits = %d, want 1", len(res))
+	}
+}
+
+func TestPruneUnseenRetainsCustomTitled(t *testing.T) {
+	db := testDB(t)
+
+	mustUpsert(t, db, []scanner.Session{
+		{SessionID: "named", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p", CustomTitle: "kept"},
+		{SessionID: "plain", ProjectName: "p", ClaudeDir: "/c", ProjectPath: "/code/p"},
+	})
+	if _, err := db.PruneUnseen([]string{"other"}, []string{"/code"}); err != nil {
+		t.Fatalf("PruneUnseen: %v", err)
+	}
+	all, _ := db.AllSessions("modified", true)
+	if len(all) != 1 || all[0].SessionID != "named" {
+		t.Errorf("got %+v, want only the named session", all)
+	}
+}

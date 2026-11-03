@@ -30,17 +30,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 	last_scanned    TEXT,
 	is_worktree     INTEGER,
 	parent_project_name TEXT,
-	worktree_name   TEXT
+	worktree_name   TEXT,
+	custom_title    TEXT
 );
 `
 
-// worktreeColumns are added to older databases via ALTER TABLE in migrate().
+// addedColumns are added to older databases via ALTER TABLE in migrate().
 // is_worktree is deliberately nullable: NULL means "never resolved" (preserve),
 // 0/1 mean a known non-worktree / worktree.
-var worktreeColumns = []struct{ name, decl string }{
+var addedColumns = []struct{ name, decl string }{
 	{"is_worktree", "INTEGER"},
 	{"parent_project_name", "TEXT"},
 	{"worktree_name", "TEXT"},
+	{"custom_title", "TEXT"},
 }
 
 // sessionColumns is listed explicitly so databases created by older versions,
@@ -48,7 +50,7 @@ var worktreeColumns = []struct{ name, decl string }{
 const sessionColumns = `session_id, project_name, project_path, claude_dir,
 	first_prompt, existing_summary, title, message_count, created, modified,
 	git_branch, is_sidechain, jsonl_path, last_scanned,
-	is_worktree, parent_project_name, worktree_name`
+	is_worktree, parent_project_name, worktree_name, custom_title`
 
 // Session is the DB representation, extending scanner.Session with the cached title.
 type Session struct {
@@ -59,6 +61,7 @@ type Session struct {
 	FirstPrompt     string
 	ExistingSummary string
 	Title           string
+	CustomTitle     string
 	MessageCount    int
 	Created         time.Time
 	Modified        time.Time
@@ -140,7 +143,7 @@ func migrate(conn *sql.DB) error {
 	}
 	rows.Close()
 
-	for _, c := range worktreeColumns {
+	for _, c := range addedColumns {
 		if existing[c.name] {
 			continue
 		}
@@ -201,8 +204,8 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			(session_id, project_name, project_path, claude_dir,
 			 first_prompt, existing_summary, title, message_count, created, modified,
 			 git_branch, is_sidechain, jsonl_path, last_scanned,
-			 is_worktree, parent_project_name, worktree_name)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 is_worktree, parent_project_name, worktree_name, custom_title)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
@@ -212,6 +215,7 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			-- Keep an already-harvested title when a later scan finds none,
 			-- e.g. the session now resolves via the stale index instead.
 			title = COALESCE(NULLIF(excluded.title, ''), sessions.title),
+			custom_title = COALESCE(NULLIF(excluded.custom_title, ''), sessions.custom_title),
 			message_count = COALESCE(excluded.message_count, sessions.message_count),
 			created = COALESCE(excluded.created, sessions.created),
 			modified = COALESCE(excluded.modified, sessions.modified),
@@ -237,7 +241,7 @@ func (db *DB) Upsert(sessions []scanner.Session) error {
 			s.FirstPrompt, s.ExistingSummary, s.Title, s.MessageCount,
 			formatTime(s.Created), formatTime(s.Modified),
 			s.GitBranch, boolToInt(s.IsSidechain), s.JSONLPath, now,
-			wtIsWorktree, wtParentName, wtName,
+			wtIsWorktree, wtParentName, wtName, s.CustomTitle,
 		)
 		if err != nil {
 			return fmt.Errorf("upserting session %s: %w", s.SessionID, err)
@@ -285,7 +289,7 @@ func (db *DB) Search(query string) ([]Session, error) {
 	like := "%" + query + "%"
 	return db.querySessions(
 		`SELECT `+sessionColumns+` FROM sessions WHERE
-			project_name LIKE ?1 OR title LIKE ?1
+			project_name LIKE ?1 OR title LIKE ?1 OR custom_title LIKE ?1
 			OR first_prompt LIKE ?1 OR git_branch LIKE ?1 OR existing_summary LIKE ?1
 			OR parent_project_name LIKE ?1 OR worktree_name LIKE ?1
 		ORDER BY modified DESC`,
@@ -296,7 +300,7 @@ func (db *DB) Search(query string) ([]Session, error) {
 // PruneUnseen deletes sessions that were not part of the current scan.
 // This handles deleted sessions, removed scan paths, etc.
 //
-// Sessions that carry a harvested title are kept even once they stop being
+// Sessions that carry a harvested or custom title are kept even once they stop being
 // scannable, so a title survives Claude Code deleting the transcript. They are
 // still dropped when their project leaves retainPaths, otherwise removing a scan
 // path would leave its sessions behind forever. Pass no retainPaths to prune
@@ -338,7 +342,7 @@ func (db *DB) PruneUnseen(currentIDs []string, retainPaths []string) (int64, err
 		DELETE FROM sessions
 		WHERE session_id NOT IN (SELECT session_id FROM seen_ids)
 		  AND NOT (
-			COALESCE(title, '') <> ''
+			(COALESCE(title, '') <> '' OR COALESCE(custom_title, '') <> '')
 			AND EXISTS (
 				SELECT 1 FROM retain_paths rp
 				WHERE sessions.project_path = rp.path
@@ -412,13 +416,14 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 			isWorktree        sql.NullInt64
 			parentProjectName sql.NullString
 			worktreeName      sql.NullString
+			customTitle       sql.NullString
 		)
 		err := rows.Scan(
 			&s.SessionID, &s.ProjectName, &projectPath, &s.ClaudeDir,
 			&firstPrompt, &existingSummary, &title,
 			&messageCount, &created, &modified,
 			&gitBranch, &isSidechain, &jsonlPath, &lastScanned,
-			&isWorktree, &parentProjectName, &worktreeName,
+			&isWorktree, &parentProjectName, &worktreeName, &customTitle,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -437,6 +442,7 @@ func (db *DB) querySessions(query string, args ...any) ([]Session, error) {
 		s.IsWorktree = isWorktree.Valid && isWorktree.Int64 == 1
 		s.ParentProjectName = parentProjectName.String
 		s.WorktreeName = worktreeName.String
+		s.CustomTitle = customTitle.String
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()
