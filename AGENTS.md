@@ -58,6 +58,10 @@ The v2 renderer emits only the cells that changed. `teatest` assertions must
 therefore wait on content that actually updates: text painted once and never
 touched again is consumed by the first read and never re-sent.
 
+### Update check
+
+`internal/update` asks the GitHub releases API for the latest tag at most once per 24 h (`update-check.json` in `config.CacheDir()`); a failed request is cached too, so an offline machine is not asked on every launch. It runs as a `tea.Cmd` from `Init`, only when `check_updates` is on and the build has a version (`main.buildVersion`, set by GoReleaser or `git describe`). `update.Command` picks the upgrade command from the resolved path of `os.Executable()`. cc360 never replaces its own binary.
+
 ## Layout Height Budget
 
 The table's `setHeight()` reserves 4 lines of chrome (top separator + column header + separator + info line). The model's `tableHeight()` subtracts header(1) + status(1) + help(1) from terminal height, plus detail pane and filter bar when visible. The info line is always rendered (even when empty) to prevent layout jumps.
